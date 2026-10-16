@@ -14,6 +14,25 @@ FlowHaMeR 组合包：拖拽视频 → 合并FBX
 每个阶段的日志、采样帧号、相机间隔、耗时和最终SDK验证在同一目录。
 运行失败窗口不会自动消失，请查看末尾错误及对应阶段.log。
 
+npz 字段
+--------
+final.npz：
+- poses (T,52,3)：SMPL-H轴角，手指已合入HaMeR。
+- trans (T,3)：根平移，米。
+- betas (1,16)、Rh (T,3)、num_frames、mocap_framerate、gender。
+- foot_contacts (T,4) float32：逐帧脚接触分数，列顺序
+  ['L_Ankle','L_Foot','R_Ankle','R_Foot']。
+  这是模型输出的概率，后处理用它按 >0.7 判定接触段。
+  它与poses/trans的Y轴180度旋转无关，不需要跟着旋转。
+
+同目录另有两份身体结果，字段与final.npz相同、都含foot_contacts：
+- body_origin.npz：FlowHMR网络原始输出，未做后处理，手指也是FlowHMR的。
+- body_postprocess.npz：做完脚接触/IK等后处理，手指仍是FlowHMR的。
+对应上游的 <name>_origin.* 与 <name>.* 两份。
+final.npz = body_postprocess.npz 再替换30个手指关节。
+
+字段名与上游FlowHMR保存路径一致，可直接沿用原有下游脚本。
+
 本次选定的默认配置
 ------------------
 - Fast-SAM-3D-Body，SKIP_KEYPOINT_PROMPT=1。

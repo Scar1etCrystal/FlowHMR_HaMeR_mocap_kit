@@ -23,7 +23,7 @@ PRODUCTS = {
     'prepare': ['working_30fps.mp4', 'main_track.npz', 'video_info.json'],
     'camera': ['camera.npz', 'camera_info.json'],
     'sam': ['sam_mean_features.pt', 'sam_mean_components.npz', 'sam_run_info.json'],
-    'generate': ['body_postprocess.npz', 'generation_info.json'],
+    'generate': ['body_origin.npz', 'body_postprocess.npz', 'generation_info.json'],
     'hamer': ['hands/working_30fps_hamer_data.pkl', 'hands/run_info.json', 'hands/working_30fps_sampling.npz'],
     'merge': ['final.fbx', 'final.npz', 'validation.json'],
 }
@@ -201,17 +201,58 @@ def stage_generate(job, cfg):
     torch.cuda.synchronize();gen_seconds = time.perf_counter()-t
     gen_alloc = torch.cuda.max_memory_allocated()/2**30
     gen_reserved = torch.cuda.max_memory_reserved()/2**30
+    # Snapshot the raw network output first: postprocess mutates these tensors in place.
+    # Mirrors upstream FlowHMR, which writes <name>_origin.* before postprocessing and
+    # <name>.* after, so downstream work can pick either stage.
+    origin_raw = {'rot6d': output['rot6d'][0, :n].detach().cpu().clone(),
+                  'trans': output['trans'][0, :n].detach().cpu().clone(),
+                  'shapes': output['shapes'][0, :1].detach().cpu().clone()}
+    if 'foot_contacts' in output:
+        origin_raw['foot_contacts'] = output['foot_contacts'][0, :n].detach().cpu().clone()
     torch.cuda.reset_peak_memory_stats(); t = time.perf_counter()
     output = engine.postprocess.run(output)
     torch.cuda.synchronize();post_seconds = time.perf_counter()-t
     post_alloc = torch.cuda.max_memory_allocated()/2**30
     post_reserved = torch.cuda.max_memory_reserved()/2**30
-    poses = rotation_matrix_to_angle_axis(rot6d_to_rotation_matrix(output['rot6d'][0])).detach().cpu().numpy().copy()
-    trans = output['trans'][0].detach().cpu().numpy().copy()
-    _rotate_smplh_params_y180(poses,trans)
-    data = dict(poses=poses.astype(np.float32), trans=trans.astype(np.float32),
-                betas=output['shapes'][0,:1].detach().cpu().numpy(), Rh=poses[:,0].copy(),
-                num_frames=n,mocap_framerate=30,gender='neutral')
+    def build_params(rot6d, trans_, shapes, contacts):
+        """Same fields and Y-180 convention for the raw and postprocessed files.
+
+        Accepts CUDA or CPU tensors: the raw snapshot is already on CPU while the
+        postprocessed tensors are still on the device.
+        """
+        rot6d = rot6d.detach().cpu()
+        trans_ = trans_.detach().cpu()
+        shapes = shapes.detach().cpu()
+        p = rotation_matrix_to_angle_axis(rot6d_to_rotation_matrix(rot6d)).numpy().copy()
+        t_ = trans_.numpy().copy()
+        _rotate_smplh_params_y180(p, t_)
+        out = dict(poses=p.astype(np.float32), trans=t_.astype(np.float32),
+                   betas=shapes.numpy(), Rh=p[:, 0].copy(),
+                   num_frames=n, mocap_framerate=30, gender='neutral')
+        if contacts is not None:
+            c = contacts.detach().cpu().numpy()
+            assert c.shape == (n, 4), c.shape
+            if not np.isfinite(c).all():
+                raise RuntimeError('Non-finite foot_contacts in model output')
+            out['foot_contacts'] = c.astype(np.float32)
+        return out
+
+    # Raw network output before postprocessing. Mirrors upstream FlowHMR, which
+    # writes <name>_origin.* first and <name>.* after, so downstream work can
+    # choose either stage. Field set and Y-180 convention are identical.
+    origin_params = build_params(origin_raw['rot6d'], origin_raw['trans'],
+                                 origin_raw['shapes'], origin_raw.get('foot_contacts'))
+    np.savez(job/'body_origin.npz', **origin_params)
+
+    # Postprocessed result; the later merge stage adds the HaMeR fingers.
+    # Per-frame foot contact scores are (T, 4) float32 ordered
+    # ['L_Ankle','L_Foot','R_Ankle','R_Foot'] -- same field name and layout as the
+    # upstream save path, so existing downstream consumers work unchanged.
+    # They are probabilities and are unaffected by the Y-180 rotation.
+    contact_columns = ['L_Ankle', 'L_Foot', 'R_Ankle', 'R_Foot'] \
+        if 'foot_contacts' in origin_params else None
+    data = build_params(output['rot6d'][0], output['trans'][0], output['shapes'][0, :1],
+                        output['foot_contacts'][0, :n] if 'foot_contacts' in output else None)
     np.savez(job/'body_postprocess.npz',**data)
     save_json(job/'generation_info.json',{'frames':n,'generation_seconds':gen_seconds,
               'postprocess_seconds':post_seconds,'postprocess':True,
@@ -226,6 +267,10 @@ def stage_generate(job, cfg):
               'generation_peak_reserved_GiB':gen_reserved,
               'postprocess_peak_alloc_GiB':post_alloc,
               'postprocess_peak_reserved_GiB':post_reserved,
+              'foot_contacts_exported':contact_columns is not None,
+              'foot_contacts_columns':contact_columns,
+              'foot_contacts_semantics':'per-frame contact probability; postprocess uses >0.7 as contact',
+              'raw_output_npz':'body_origin.npz (pre-postprocess, no HaMeR fingers)',
               'peak_alloc_GiB':max(gen_alloc,post_alloc),
               'peak_reserved_GiB':max(gen_reserved,post_reserved)})
     print('GENERATION_DONE', n, flush=True)
