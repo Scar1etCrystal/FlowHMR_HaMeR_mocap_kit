@@ -1,0 +1,206 @@
+{
+  "description": "Model weights required by FlowHMR_HaMeR_mocap_kit. They are deliberately NOT stored in Git; see WEIGHTS_AND_ENV.md.",
+  "pack_root_used_for_this_inventory": "paths in this file are relative to the package root",
+  "file_count": 28,
+  "total_bytes": 19366267697,
+  "total_GiB": 18.036,
+  "redistribution_note": "Every file below is third-party material with its own license. SMPL-H/MANO models require registration and must not be redistributed; FAIR models (SAM-3D-Body, VGGT-Omega, DINOv3) and HaMeR carry their own terms. Verify each license at its source before mirroring any file.",
+  "files": [
+    {
+      "path": "app/flowhmr/checkpoints/flowhmr_latest/flowhmr_latest.ckpt",
+      "bytes": 1841702021,
+      "sha256": "b7eb06b119feaf5ad7287bafdb2fff38d42dfc22ea9d256f8cdd2ada26dfc53a",
+      "source": "app/flowhmr/docs/resources.md (FlowHMR base / latest)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/sam-3d-body-dinov3/README.md",
+      "bytes": 5767,
+      "sha256": "d5c96ec8f418876e5ead1ad8426a36f18e2393006651f6aa50c733daa5658db1",
+      "source": "https://huggingface.co/facebook/sam-3d-body-dinov3",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/sam-3d-body-dinov3/model.ckpt",
+      "bytes": 2109129346,
+      "sha256": "b5a2f9d305dd02626b967aa2e86021fba07065df66ce7a7e00ffb9664f150abf",
+      "source": "https://huggingface.co/facebook/sam-3d-body-dinov3",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/sam-3d-body-dinov3/model_config.yaml",
+      "bytes": 1488,
+      "sha256": "1012fc3f39cb5e90e3f8fbadf7bded31604bfafdce0321d17a7c1a2d3f08b88d",
+      "source": "https://huggingface.co/facebook/sam-3d-body-dinov3",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/sam-3d-body-dinov3/assets/mhr_model.pt",
+      "bytes": 696110248,
+      "sha256": "352e271a6c42729c68554ceaea0c955e866970160c31e35506d782dc0f7377bc",
+      "source": "https://huggingface.co/facebook/sam-3d-body-dinov3",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/vggt-omega/vggt_omega_1b_512.pt",
+      "bytes": 4576706117,
+      "sha256": "c02da418b18bb01d0392598d3f6147366bcde1bb70fd08a5e3bf7925b0667934",
+      "source": "https://huggingface.co/facebook/VGGT-Omega",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/ckpts/yolox/yolox_l.pth",
+      "bytes": 434357141,
+      "sha256": "1e6b7fa6240375370b2a8a8eab9066b3cdd43fd1d0bfa8d2027fd3a51def2917",
+      "source": "app/flowhmr/docs/resources.md (YOLOX detector)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/FlowHMR-logo-tagline.svg",
+      "bytes": 36367,
+      "sha256": "1feed0a8583efafbaa7360c6c6ef0c8a36a2dc342bde17bff116623a2612f322",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/motion_stats.json",
+      "bytes": 164000,
+      "sha256": "2996ee7c4c7658c8d8c6560a8426cdb88d1e854af495b33bbec001b14b5d61c1",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/web_demo.png",
+      "bytes": 1013654,
+      "sha256": "95cfbbccb552908161e21da8f9dd5aa2729dedda9c277076e2c37f5dd89840ed",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/LICENSE.txt",
+      "bytes": 4330,
+      "sha256": "75fc4da03259504ce9a4ed2418ab98dd59647add7ff95e7691c4d55fb0e3cf63",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/README.md",
+      "bytes": 213,
+      "sha256": "e72c5ff2b27c26684ef22c016965f4219d79b01ecc84b179de16c8439d14737d",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/info.txt",
+      "bytes": 305,
+      "sha256": "62d14885b2b6d5b2c4b2b2296a9437d46f7a9a372815ee8d8c3857416c430a4a",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/smpl_neutral_J_regressor.pt",
+      "bytes": 662187,
+      "sha256": "70e3213bd30fe8d8ce37b54675282745e406f915a51511a003aeff99b6da04cf",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/smplh/female/model.npz",
+      "bytes": 87259106,
+      "sha256": "fc10da26f7fc1d5a913c1fba57ed67a84ab9c55e5391c653c983d57acf1a39d2",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/smplh/male/model.npz",
+      "bytes": 87259106,
+      "sha256": "be42bff1ff0589cf0467893bcfbbeb3f9b533ba151031c8cdfb64ca1dcb34947",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/body_models/smplh/neutral/model.npz",
+      "bytes": 87259106,
+      "sha256": "a60a7e29d33f09ef1a6352907e2f485e161f471330ca40592764374063e751df",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/flowhmr/assets/example/example.mp4",
+      "bytes": 5930497,
+      "sha256": "094cc009fb7bee43146e35fbb41a3e5f036d6fdfd04528329fc53e5cd7a010a9",
+      "source": "https://mano.is.tue.mpg.de/ (SMPL-H neutral, AMASS smplh_amass_neutral)",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/hamer_demo_data.tar.gz",
+      "bytes": 117,
+      "sha256": "003c7bec71a8d94f649bd4a99fc1e4377eb6d8a809a35324e53d74305f44a410",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/data/mano_mean_params.npz",
+      "bytes": 1178,
+      "sha256": "efc0ec58e4a5cef78f3abfb4e8f91623b8950be9eff8b8e0dbb0d036ebc63988",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/data/mano/MANO_LEFT.pkl",
+      "bytes": 3821391,
+      "sha256": "c4022f7083f2ca7c78b2b3d595abbab52debd32b09d372b16923a801f0ea6a30",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/data/mano/MANO_RIGHT.pkl",
+      "bytes": 3821356,
+      "sha256": "45d60aa3b27ef9107a7afd4e00808f307fd91111e1cfa35afd5c4a62de264767",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/hamer_ckpts/dataset_config.yaml",
+      "bytes": 1369,
+      "sha256": "392d10aece296152769328f14bb1c0137d6ea2f50f7e69f716ee00e9ad6ac343",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/hamer_ckpts/model_config.yaml",
+      "bytes": 2072,
+      "sha256": "0e5eeb82752e47dfd01db8e13ccc4c5eba9bf83f53da8285523b8d3e87247aa3",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt",
+      "bytes": 2689536166,
+      "sha256": "e5cc06f294d88a92dee24e603480aab04de532b49f0e08200804ee7d90e16f53",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/_DATA/vitpose_ckpts/vitpose+_huge/wholebody.pth",
+      "bytes": 3807742341,
+      "sha256": "b0555e1e2392e6a2be2d9265368f344d70ccbfd656ad480aa5c1de2e604519c9",
+      "source": "HaMeR checkpoint and ViTPose whole-body weights from their official releases",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/models/model_final_ef3a80.pkl",
+      "bytes": 167792431,
+      "sha256": "268819eb7419a02b2a9bcb510a4cb06c2b33a534897f7351871295b544eeb05e",
+      "source": "local HaMeR/SMPL body-model copies used by this package",
+      "redistributable": false
+    },
+    {
+      "path": "app/hamer/models/model_final_f05665.pkl",
+      "bytes": 2765948277,
+      "sha256": "8601bc52000c8a87960f3db6a9672596c5e06ce33bc30a3b8f96a96efe42ae60",
+      "source": "local HaMeR/SMPL body-model copies used by this package",
+      "redistributable": false
+    }
+  ]
+}

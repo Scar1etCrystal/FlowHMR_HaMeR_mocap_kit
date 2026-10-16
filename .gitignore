@@ -1,0 +1,48 @@
+# Model weights and the bundled Python environment are not stored in Git.
+# See WEIGHTS_AND_ENV.md and weights_manifest.json for how to obtain them.
+#
+# Rules below are anchored to the real locations in this package. Do not use
+# unanchored directory names such as "Scripts/" or "data/": on a case-insensitive
+# filesystem they also match legitimate source directories.
+
+# --- weights, checkpoints and generated output ----------------------------
+/app/flowhmr/checkpoints/
+/app/flowhmr/ckpts/
+/app/flowhmr/assets/
+/app/flowhmr/output/
+/app/hamer/_DATA/
+/app/hamer/models/
+/envs/
+/inputs/
+/outputs/
+/logs/
+
+# --- artifact types -------------------------------------------------------
+*.ckpt
+*.pth
+*.pt
+*.pkl
+*.npz
+*.onnx
+*.safetensors
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.log
+*.orig_*
+*.before_*
+*.part.*
+run_manifest.json
+request.json
+
+# --- python / editor / os -------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

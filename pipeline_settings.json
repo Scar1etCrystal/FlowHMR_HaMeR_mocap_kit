@@ -1,0 +1,17 @@
+{
+  "sam_hand_interval": 60,
+  "sam_sampling_seed": 20261014,
+  "hamer_interval": 2,
+  "hamer_batch_size": 16,
+  "hamer_smooth_window": 11,
+  "hamer_max_interp_gap": 15,
+  "flow_seed": 0,
+  "flow_steps": 20,
+  "flow_cfg_scale": 1.0,
+  "attention_backend": "query_batched",
+  "attention_query_chunk": 256,
+  "vggt_interval": "auto",
+  "vggt_max_samples": 31,
+  "max_generation_frames": 3600,
+  "threads": 8
+}
