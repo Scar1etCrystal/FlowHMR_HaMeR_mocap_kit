@@ -1,6 +1,7 @@
 {
-  "sam_hand_interval": 60,
+  "sam_hand_interval": 4,
   "sam_sampling_seed": 20261014,
+  "sam_hand_mode": "sample_linear",
   "hamer_interval": 2,
   "hamer_batch_size": 16,
   "hamer_smooth_window": 11,

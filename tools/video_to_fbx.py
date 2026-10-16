@@ -37,6 +37,13 @@ INPUTS = {
 }
 
 
+def products_for(stage, cfg):
+    """Expected stage outputs; per_frame SAM adds the dense hand cache."""
+    names = list(PRODUCTS[stage])
+    if stage == 'sam' and cfg.get('sam_hand_mode') == 'per_frame':
+        names.append('sam_hand_dense.npz')
+    return names
+
 def sha(path):
     h = hashlib.sha256()
     with open(path, 'rb') as f:
@@ -146,7 +153,8 @@ def stage_sam(job, cfg):
     sys.path.insert(0, str(TOOLS))
     from sam_mean_features import extract
     extract(job/'working_30fps.mp4', job/'main_track.npz', job/'camera.npz', job,
-            cfg['sam_hand_interval'], cfg['sam_sampling_seed'])
+            cfg['sam_hand_interval'], cfg['sam_sampling_seed'],
+            hand_mode=cfg['sam_hand_mode'])
 
 def stage_generate(job, cfg):
     import numpy as np
@@ -344,6 +352,9 @@ def checked_settings(path):
     c=json.loads(Path(path).read_text(encoding='utf-8'))
     c.setdefault('attention_backend', 'query_batched')
     c.setdefault('attention_query_chunk', 256)
+    c.setdefault('sam_hand_mode', 'sample_linear')
+    if c['sam_hand_mode'] not in ('sample_linear', 'mean', 'per_frame'):
+        raise ValueError("sam_hand_mode must be 'sample_linear', 'mean' or 'per_frame'")
     if c['attention_backend'] not in ('query_batched', 'original'):
         raise ValueError('attention_backend must be query_batched or original')
     if type(c['attention_query_chunk']) is not int or c['attention_query_chunk'] < 1:
@@ -402,7 +413,11 @@ def run_input(source, root, c, fresh):
     manifest={'source':str(source),'job':str(job),'settings':c,'status':'running','stages':{}}
     save_json(job/'run_manifest.json',manifest)
     begin=time.perf_counter()
-    print(f'Output: {job}\nSAM hand mean N={c["sam_hand_interval"]}, HaMeR N={c["hamer_interval"]}, '
+    mode = c['sam_hand_mode']
+    mode_text = {'sample_linear': f"SAM hands every {c['sam_hand_interval']} frames + linear interpolation",
+                 'mean': f"SAM hands every {c['sam_hand_interval']} frames + whole-clip mean",
+                 'per_frame': 'SAM hands every frame'}[mode]
+    print(f'Output: {job}\n{mode_text}, HaMeR N={c["hamer_interval"]}, '
           'Fast + SKIP_KEYPOINT_PROMPT=1, postprocess on / ordinary smooth off',flush=True)
     print(f'Attention: {c["attention_backend"]}, query chunk={c["attention_query_chunk"]}, '
           'global refiner preserved',flush=True)
@@ -413,7 +428,7 @@ def run_input(source, root, c, fresh):
             if marker.is_file():
                 old=json.loads(marker.read_text(encoding='utf-8'))
                 cached=all((job/p).is_file() and sha(job/p)==h for p,h in old.get('products',{}).items())
-                cached=cached and set(old.get('products',{}))==set(PRODUCTS[stage])
+                cached=cached and set(old.get('products',{}))==set(products_for(stage,c))
                 cached=cached and old.get('inputs')==input_hashes
             if cached:
                 print(f'[{stage}] CACHE verified',flush=True)
@@ -432,10 +447,10 @@ def run_input(source, root, c, fresh):
                     proc.kill();proc.wait();raise
                 if rc:raise RuntimeError(f'{stage} failed (exit {rc}). See {job/stage}.log')
             secs=time.perf_counter()-t
-            for name in PRODUCTS[stage]:
+            for name in products_for(stage,c):
                 if not (job/name).is_file():raise RuntimeError(f'{stage} output missing: {name}')
             save_json(marker,{'seconds':secs,'inputs':input_hashes,
-                              'products':{p:sha(job/p) for p in PRODUCTS[stage]}})
+                              'products':{p:sha(job/p) for p in products_for(stage,c)}})
             manifest['stages'][stage]={'cached':False,'seconds_this_run':secs}
             save_json(job/'run_manifest.json',manifest)
         manifest.update(status='completed',elapsed_seconds=time.perf_counter()-begin,

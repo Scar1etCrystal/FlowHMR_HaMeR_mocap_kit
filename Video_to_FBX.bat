@@ -8,9 +8,9 @@ if "%~1"=="" (
   if not defined FLOWHMR_NO_PAUSE pause
   exit /b 2
 )
-echo Fast-SAM N60 mean + SKIP_KEYPOINT_PROMPT + HaMeR N2
+echo One-click video to merged FBX.  Settings: pipeline_settings.json
+echo SAM hands every 4 frames + linear interpolation, HaMeR interval 2
 echo FlowHMR postprocess ON, ordinary 3-frame smoothing OFF
-echo Attention backend comes from pipeline_settings.json; default query_batched.
 echo.
 "%PY%" -u "%PACK_ROOT%\tools\video_to_fbx.py" %*
 set "PIPELINE_EXIT=%ERRORLEVEL%"
