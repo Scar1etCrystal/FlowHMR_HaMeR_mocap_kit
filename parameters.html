@@ -1,0 +1,1785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>MOCAP KIT — CONSOLE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+/* ============================================================
+   Swiss Modernism 2.0 — 12-column grid, 8px base unit,
+   flat surfaces, 1px hairlines, single red accent, no rounding.
+   Density 4 (roomy) / Motion 2 (subtle, 150-250ms ease-out).
+   ============================================================ */
+:root{
+  --ink:#111111;
+  --red:#D7261E;
+  --red-ink:#FFFFFF;
+  --cement-100:#F4F3F1;
+  --cement-200:#E6E4E0;
+  --cement-300:#D3D0CB;
+  --cement-400:#B4B0AA;
+  --cement-600:#6E6A65;
+
+  /* mathematical spacing scale, 8px base unit; density dial 4 (roomy) */
+  --s1:8px; --s2:12px; --s3:16px; --s4:24px; --s6:32px;
+
+  --control-h:40px;
+  --chip-h:28px;
+  --strip-h:36px;
+  --log-line:18px;
+  --hairline:1px solid var(--cement-400);
+  --hairline-soft:1px solid var(--cement-300);
+
+  --t-fast:150ms ease-out;
+  --t-panel:200ms ease-out;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+/* The hidden attribute must always win. Author rules such as .strip{display:flex}
+   otherwise override the user agent's [hidden]{display:none}, and the element
+   keeps showing after JS hides it — along with its own separator rules. */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--cement-100);
+  color:var(--ink);
+  font-family:Inter,"Helvetica Neue",Helvetica,Arial,"Segoe UI",system-ui,sans-serif;
+  font-size:14px;
+  line-height:1.45;
+  font-weight:400;
+  font-variant-numeric:tabular-nums;
+}
+button,input,select{font:inherit;color:inherit;letter-spacing:inherit}
+button{margin:0;border:0;background:none;text-align:left}
+h1,h2,p,ul,li,figure{margin:0;padding:0}
+ul{list-style:none}
+
+/* --- focus: always visible, red, never removed --- */
+:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+.control:focus-visible{outline-offset:1px}
+/* inset ring: keeps the focus mark inside a strip flush with the page edge */
+.inset-focus:focus-visible{outline-offset:-3px}
+
+/* ================= 1. PAGE GRID ================= */
+.page{
+  max-width:1120px;
+  margin:0 auto;
+  padding:0 32px 32px;
+  display:grid;
+  grid-template-columns:repeat(12,1fr);
+  column-gap:16px;
+  align-content:start;
+}
+.page > *{grid-column:1 / -1}
+
+/* ================= 2. TOP BAR ================= */
+.topbar{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:var(--s3);
+  padding:32px 0 16px;
+  border-bottom:var(--hairline);
+}
+.brand{display:flex;align-items:baseline;gap:var(--s3);min-width:0}
+.brand h1{
+  font-size:15px;line-height:1;font-weight:700;
+  letter-spacing:.11em;text-transform:uppercase;
+}
+.brand-sub{
+  font-size:10px;line-height:1;font-weight:500;
+  letter-spacing:.15em;text-transform:uppercase;
+  color:var(--cement-600);
+}
+.topbar-end{flex:none;display:flex;align-items:center;gap:var(--s3)}
+
+/* dense square button: 24px, 1px rule, no rounding */
+.lang{
+  cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:44px;height:var(--chip-h);padding:0 var(--s2);
+  border:var(--hairline);
+  background:var(--cement-200);
+  font-size:11px;line-height:1;font-weight:700;
+  letter-spacing:.08em;
+  transition:background-color var(--t-fast),color var(--t-fast),border-color var(--t-fast);
+}
+.lang:hover{background:var(--ink);border-color:var(--ink);color:var(--cement-100)}
+
+/* fixed height: status text changes must never shift the layout */
+.status{
+  flex:none;
+  display:flex;align-items:center;gap:var(--s2);
+  height:var(--chip-h);padding:0 10px;
+  border:var(--hairline);
+  font-size:10px;line-height:1;font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;
+  white-space:nowrap;
+}
+.status .mark{display:block;width:6px;height:6px;background:var(--red)}
+
+/* ================= 3. WEIGHTS BANNER =================
+   Shown only while preflight.ready is false, hidden entirely otherwise.
+   Surface is --cement-200 with a 4px --red left edge; the count line and the
+   entry list sit on --cement-100 because #6E6A65 on --cement-200 measures
+   4.23:1, under the 4.5:1 this design holds all text to (on --cement-100 the
+   same grey measures 4.73:1). */
+.banner{
+  margin-top:var(--s4);
+  background:var(--cement-200);
+  border:1px solid var(--cement-400);
+  border-left:4px solid var(--red);
+}
+.banner[hidden]{display:none}
+.banner-title{
+  padding:12px;
+  font-size:11px;line-height:1;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink);
+}
+.banner-body{
+  padding:8px 12px 12px;
+  background:var(--cement-100);
+  border-top:1px solid var(--cement-300);
+}
+.banner-count{
+  font-size:13px;line-height:1.45;
+  color:var(--cement-600);
+}
+.banner-list{margin-top:var(--s2);max-height:140px;overflow-y:auto}
+.banner-list[hidden]{display:none}
+.banner-item{
+  display:flex;flex-wrap:wrap;align-items:baseline;
+  gap:2px var(--s2);
+  padding:6px 0;
+  border-top:1px solid var(--cement-300);
+}
+.banner-item:first-child{border-top:0;padding-top:0}
+.banner-label{font-size:13px;line-height:1.4;font-weight:400;color:var(--ink)}
+.banner-path{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.4;
+  color:var(--cement-600);
+  overflow-wrap:anywhere;
+}
+.banner-source{font-size:12px;line-height:1.4;color:var(--cement-600);overflow-wrap:anywhere}
+.banner-src{
+  margin-right:6px;
+  font-size:10px;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;
+}
+
+/* ================= 4. RUN STRIP ================= */
+.runstrip{
+  position:relative;
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);
+  min-height:48px;
+  margin-top:var(--s4);
+  padding:var(--s2) 0;
+  /* no border-top: the .topbar rule directly above already divides this band */
+  border-bottom:var(--hairline);
+}
+.runstrip.drag{outline:1px solid var(--red);outline-offset:-3px}
+/* the path field takes every column the label and the two buttons do not need */
+.runstrip .path{flex:1 1 auto;min-width:180px}
+.wlabel{
+  flex:none;
+  font-size:10px;line-height:1;font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;
+  color:var(--cement-600);
+}
+.drop-hint{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  display:none;
+  padding:5px 10px;
+  background:var(--red);color:var(--red-ink);
+  font-size:10px;line-height:1;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;
+  white-space:nowrap;
+}
+.runstrip.drag .drop-hint{display:block}
+/* override for path text: file paths are case sensitive, keep them as typed */
+.settings input[type="text"].control{text-transform:none}
+
+/* ================= 5. PROGRESS STRIP ================= */
+.progress{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s6);
+  min-height:var(--strip-h);
+  padding:var(--s2) 0;
+  border-bottom:var(--hairline);
+}
+.stage-value{
+  display:inline-block;min-width:72px;
+  font-size:12px;line-height:1;font-weight:700;
+  letter-spacing:.06em;text-transform:uppercase;
+}
+.bar{
+  flex:1 1 180px;min-width:120px;max-width:420px;
+  height:10px;padding:1px;
+  border:1px solid var(--ink);
+  background:var(--cement-200);
+}
+.bar[hidden]{display:none}
+.bar-fill{
+  display:block;height:100%;width:0;
+  background:var(--red);
+  transition:width var(--t-panel);
+}
+.metric-value{
+  display:inline-block;
+  font-size:14px;line-height:1;font-weight:700;
+  letter-spacing:-.01em;
+  color:var(--ink);
+}
+.vram{display:inline-flex;align-items:baseline;gap:var(--s2)}
+.vram .sep{font-size:10px;font-weight:600;letter-spacing:.15em;color:var(--cement-600)}
+
+/* ================= 6. COLLAPSIBLE PANEL ================= */
+.panel{margin-top:var(--s4)}
+
+.panel-summary{
+  cursor:pointer;
+  width:100%;
+  display:grid;
+  /* [label] [count ...........] [right figure] [glyph] */
+  grid-template-columns:auto 1fr auto auto;
+  align-items:center;
+  column-gap:var(--s4);
+  height:var(--control-h);
+  padding:0 var(--s3);
+  background:var(--cement-200);
+  border:1px solid var(--ink);
+  font-size:11px;line-height:1;font-weight:600;
+  letter-spacing:.15em;text-transform:uppercase;
+  transition:background-color var(--t-fast);
+}
+.panel-summary:hover{background:var(--cement-300)}
+/* count stays ink, not --red: red on the --cement-200 summary is 3.95:1, and the
+   brief reserves red for accent/focus/primary + bold key figures. Ink = 14.87:1. */
+.panel-summary .count{grid-column:2;color:var(--ink);font-weight:700}
+.panel-summary .fig-end{
+  grid-column:3;justify-self:end;
+  display:flex;align-items:baseline;gap:var(--s2);
+}
+.panel-summary .glyphs{display:block;grid-column:4;min-width:12px;text-align:right;font-weight:700}
+
+.panel-body{
+  border:1px solid var(--ink);
+  border-top:0;
+  background:var(--cement-200);
+}
+.panel-body[hidden]{display:none}
+@keyframes panel-in{
+  from{opacity:0;transform:translateY(-4px)}
+  to{opacity:1;transform:none}
+}
+.panel-body{animation:panel-in var(--t-panel)}
+
+/* ================= 7. LOG PANEL ================= */
+.log-line{
+  display:flex;align-items:baseline;gap:var(--s2);
+  font-size:12px;line-height:var(--log-line);
+}
+.log-line .n{
+  flex:none;min-width:32px;
+  font-size:10px;font-weight:600;color:var(--cement-600);
+}
+.log-line .t{
+  flex:1 1 auto;min-width:0;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+}
+.log-line.is-error .t{color:var(--red)}
+.log-line.is-stage{
+  margin-top:var(--s2);
+  padding-top:5px;
+  border-top:1px solid var(--cement-400);
+}
+.log-line.is-stage:first-child{margin-top:0;padding-top:0;border-top:0}
+.log-line.is-stage .t{font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+
+.log-scroll{
+  /* fixed 14-line viewport: the panel never grows or shrinks */
+  height:calc(var(--log-line) * 14 + var(--s2) * 2);
+  overflow-y:auto;
+  padding:var(--s2) var(--s3);
+  background:var(--cement-100);
+}
+.log-lines{margin:0}
+
+.groups{
+  display:grid;
+  grid-template-columns:repeat(12,1fr);
+  column-gap:16px;
+  padding:var(--s4) var(--s3) var(--s2);
+}
+.group{
+  /* Two groups per 12-column row. Without an explicit span a .group defaults
+     to ONE column, which squeezes the controls until they clip and overlap. */
+  grid-column:span 6;
+  display:grid;
+  grid-template-columns:repeat(10,1fr);
+  column-gap:16px;
+  padding-bottom:var(--s3);
+  min-width:0;
+}
+/* ink, not --cement-600: on the --cement-200 panel surface #6E6A65 measures
+   4.23:1, under the 4.5:1 the brief requires for text. Ink measures 14.87:1.
+   Small-caps tracking alone keeps these labels visually subordinate. */
+.group-label{
+  grid-column:1 / span 2;
+  padding-top:7px;
+  font-size:10px;line-height:1.2;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink);
+}
+.group-rows{grid-column:3 / -1;border-top:var(--hairline-soft)}
+
+/* --- one parameter row: 8 columns of control, 2 columns of air --- */
+.row{
+  position:relative;
+  display:grid;
+  grid-template-columns:repeat(10,1fr);
+  column-gap:16px;
+  align-items:center;
+  padding:10px var(--s2) 10px var(--s1);
+  border-bottom:var(--hairline-soft);
+}
+.row:last-child{border-bottom:0}
+.row:hover{background:var(--cement-100)}
+.row > .fig{grid-column:1 / span 6;min-width:0}
+.row > .control{grid-column:7 / span 4;width:100%}
+
+.fig{position:relative;display:flex;align-items:center;gap:var(--s2);min-width:0}
+.fig label{
+  cursor:pointer;
+  font-size:13px;line-height:1.3;font-weight:600;
+  letter-spacing:-.005em;
+}
+.descr{
+  position:absolute;top:100%;left:0;z-index:20;
+  width:1px;height:1px;padding:0;margin:-1px;
+  overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;
+}
+.row:hover .descr,
+.fig label:focus-visible ~ .descr,
+.row:focus-within .descr{
+  width:auto;height:auto;
+  margin:0;
+  overflow:visible;
+  clip:auto;clip-path:none;
+  white-space:normal;
+}
+.row:hover .descr,
+.row:focus-within .descr{
+  margin-top:6px;
+  max-width:340px;
+  padding:var(--s2) 10px;
+  background:var(--cement-100);
+  border:1px solid var(--ink);
+  font-size:12px;line-height:1.5;
+  font-weight:400;letter-spacing:0;
+  color:var(--ink);
+}
+
+/* --- controls: cement-300 field, 1px rule, no rounding --- */
+.control{
+  height:var(--control-h);
+  padding:0 10px;
+  background:var(--cement-300);
+  border:var(--hairline);
+  border-radius:0;
+  font-size:13px;font-weight:500;
+  transition:border-color var(--t-fast),background-color var(--t-fast),color var(--t-fast);
+}
+.control:hover{border-color:var(--ink)}
+select.control{
+  cursor:pointer;
+  appearance:none;-webkit-appearance:none;-moz-appearance:none;
+  padding-right:28px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none' stroke='%23111111' stroke-width='1.5'%3E%3Cpath d='M4 6.5 8 10.5 12 6.5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 8px center;
+}
+input[type="number"].control{text-align:right}
+
+/* ================= 8. STRIPS: READOUT + EXPORT ================= */
+.strip{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:var(--s4);
+  margin-top:var(--s4);
+  padding-top:var(--s3);
+  border-top:var(--hairline);
+}
+.metric{display:flex;align-items:baseline;gap:var(--s2)}
+
+.export{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3)}
+.export-caption{
+  font-size:12px;line-height:1;font-weight:500;
+  letter-spacing:.02em;
+  color:var(--cement-600);
+}
+.btn{
+  cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;
+  height:var(--control-h);padding:0 var(--s4);
+  border:1px solid var(--ink);
+  border-radius:0;
+  background:var(--cement-300);
+  font-size:11px;line-height:1;font-weight:700;
+  letter-spacing:.15em;text-transform:uppercase;
+  transition:background-color var(--t-fast),color var(--t-fast),border-color var(--t-fast),opacity var(--t-fast);
+}
+.btn:hover{background:var(--ink);color:var(--cement-100)}
+.btn-primary{
+  background:var(--red);
+  border-color:var(--red);
+  color:var(--red-ink);
+}
+.btn-primary:hover{background:var(--ink);border-color:var(--ink);color:var(--red-ink)}
+.btn:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+/* disabled: cement-100 field so the muted label still measures 4.73:1 */
+.btn:disabled{cursor:not-allowed;background:var(--cement-100);border-color:var(--cement-400);color:var(--cement-600)}
+.btn:disabled:hover{background:var(--cement-100);border-color:var(--cement-400);color:var(--cement-600)}
+.btn-primary:disabled{background:var(--cement-100);border-color:var(--cement-400);color:var(--cement-600)}
+
+/* ================= 9. FOOTER ================= */
+/* failures only; hidden while empty: no placeholder text, no empty rule */
+.footer{
+  margin-top:var(--s3);
+  padding-top:var(--s3);
+  border-top:var(--hairline);
+  font-size:11px;line-height:1.4;font-weight:500;
+  letter-spacing:.02em;
+  color:var(--red);
+  overflow-wrap:anywhere;
+}
+
+/* ================= 9b. OUTPUT STRIP + WATERMARK ================= */
+.strip-output .output-path{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;
+  color:var(--ink);
+  overflow-wrap:anywhere;
+}
+
+/* Faint pixel-art mark in the empty band under the strips. */
+.watermark{
+  display:flex;
+  align-items:flex-end;
+  gap:var(--s4);
+  margin:var(--s6) 0 0;
+  padding-top:var(--s4);
+  border-top:var(--hairline-soft);
+  opacity:.16;
+  user-select:none;
+  pointer-events:none;
+}
+.watermark-mark{
+  flex:none;
+  width:132px;height:auto;
+  image-rendering:pixelated;
+  image-rendering:crisp-edges;
+}
+.watermark-text{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:12px;line-height:1.55;
+  color:var(--ink);
+  text-align:left;
+}
+.watermark-by{margin-top:2px}
+
+/* ================= 10. RESPONSIVE ================= */
+@media (max-width:768px){
+  .page{padding:0 16px 24px;column-gap:12px}
+  .topbar{flex-wrap:wrap;gap:var(--s2);padding:16px 0 12px}
+  .groups{display:block;padding:var(--s3) var(--s2) var(--s1)}
+  .group{display:block;padding-bottom:var(--s3)}
+  .group-label{padding:0 0 var(--s2)}
+  .group-rows{border-top:var(--hairline-soft)}
+  .row{grid-template-columns:1fr;row-gap:var(--s2);padding:var(--s2)}
+  .row > .fig,
+  .row > .control{grid-column:1 / -1}
+  .strip{flex-direction:column;align-items:stretch;gap:var(--s3)}
+  .export{justify-content:space-between}
+  .runstrip{gap:var(--s2)}
+  .runstrip .path{flex:1 1 100%}
+  .bar{max-width:none}
+  .row:hover .descr,
+  .row:focus-within .descr{max-width:none}
+}
+@media (max-width:400px){
+  .brand{flex-direction:column;gap:var(--s1)}
+}
+
+/* ================= 11. REDUCED MOTION ================= */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    transition:none !important;
+    animation:none !important;
+    scroll-behavior:auto !important;
+  }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ========== TOP BAR ========== -->
+  <header class="topbar">
+    <div class="brand">
+      <h1>MOCAP CONSOLE</h1>
+    </div>
+    <div class="topbar-end">
+      <button type="button" class="lang" id="lang-toggle" lang="zh">中文</button>
+      <p class="status" id="status-chip" role="status" aria-live="polite" aria-atomic="true"><span class="mark" aria-hidden="true"></span><span id="status-text">IDLE</span></p>
+    </div>
+  </header>
+
+  <!-- ========== MISSING MODEL WEIGHTS BANNER ==========
+       Hidden (attribute) unless /api/preflight or a status event reports
+       ready:false. Its entries live in a 140px scrollback so a long list can
+       never push the run strip off screen. -->
+  <section class="banner" id="weights-banner" role="status" aria-live="polite" aria-atomic="true" hidden>
+    <h2 class="banner-title" data-i18n="bannerTitle">MISSING MODEL WEIGHTS</h2>
+    <div class="banner-body">
+      <p class="banner-count" id="banner-count"></p>
+      <ul class="banner-list" id="banner-list" hidden></ul>
+    </div>
+  </section>
+
+  <!-- ========== RUN STRIP ========== -->
+  <section class="runstrip" id="runstrip" aria-label="Run">
+    <label class="wlabel" for="video-path" data-i18n="VIDEO">VIDEO</label>
+    <input class="control path inset-focus" type="text" id="video-path" autocomplete="off" spellcheck="false"
+           placeholder="video file path" data-i18n-attr="placeholder:pathPlaceholder">
+    <button type="button" class="btn inset-focus" id="btn-browse" data-i18n="BROWSE">BROWSE</button>
+    <button type="button" class="btn btn-primary inset-focus" id="btn-run" data-i18n="RUN" disabled>RUN</button>
+    <button type="button" class="btn inset-focus" id="btn-stop" data-i18n="STOP" disabled>STOP</button>
+    <span class="drop-hint" data-i18n="DROP">DROP TO LOAD</span>
+  </section>
+
+  <!-- ========== PROGRESS STRIP ========== -->
+  <section class="progress" id="progress-strip" aria-live="polite" aria-atomic="true" aria-label="Progress">
+    <div class="metric">
+      <span class="wlabel" data-i18n="STAGE">STAGE</span>
+      <span class="stage-value" id="stage-text">—</span>
+    </div>
+    <div class="bar" id="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-labelledby="stage-text" hidden><span class="bar-fill" id="bar-fill"></span></div>
+    <div class="metric">
+      <span class="wlabel" data-i18n="ELAPSED">ELAPSED</span>
+      <span class="metric-value" id="elapsed-text">00:00</span>
+    </div>
+    <div class="metric">
+      <span class="wlabel" data-i18n="VRAM">VRAM</span>
+      <span class="vram">
+        <span class="metric-value" id="vram-text">—</span>
+        <span class="sep" data-i18n="PEAK">PEAK</span>
+        <span class="metric-value" id="peak-text">—</span>
+      </span>
+    </div>
+  </section>
+
+  <!-- ========== LOG PANEL ========== -->
+  <section class="panel">
+    <button type="button" class="panel-summary" id="log-toggle" aria-expanded="true" aria-controls="log-body">
+      <span class="label" data-i18n="LOG">LOG</span>
+      <span class="count" id="log-count">0</span>
+      <span class="fig-end">
+        <span class="label" data-i18n="FILTERED">FILTERED</span>
+        <span class="count" id="filtered-count">0</span>
+      </span>
+      <span class="glyphs" aria-hidden="true"><span id="log-glyph-open" hidden>+</span><span id="log-glyph-close">&minus;</span></span>
+    </button>
+    <div class="panel-body" id="log-body">
+      <div class="log-scroll" id="log-scroll">
+        <ul class="log-lines" id="log-lines"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== PARAMETERS PANEL ========== -->
+  <section class="panel">
+    <button type="button" class="panel-summary" id="panel-toggle" aria-expanded="false" aria-controls="panel-body">
+      <span class="label" data-i18n="PARAMETERS">PARAMETERS</span>
+      <span class="count">16</span>
+      <span class="glyphs" aria-hidden="true"><span id="glyph-open">+</span><span id="glyph-close" hidden>&minus;</span></span>
+    </button>
+
+    <div class="panel-body" id="panel-body" hidden>
+      <div class="groups settings">
+
+        <!-- ---------- GROUP 1: HAND ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpHand">HAND</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-sam-hand-interval" data-i18n="lbHandInterval">Hand interval</label>
+                <span class="descr" id="d-sam-hand-interval" data-i18n="dsHandInterval">每几帧真实计算一次双手。越小越接近逐帧，越慢。</span>
+              </span>
+              <input class="control" type="number" id="p-sam-hand-interval" data-key="sam_hand_interval"
+                     min="1" max="120" step="1" value="4" aria-describedby="d-sam-hand-interval">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-sam-hand-mode" data-i18n="lbSamHandMode">Hand fill</label>
+                <span class="descr" id="d-sam-hand-mode" data-i18n="dsSamHandMode">抽样帧之间的手部特征如何补齐。sample_linear 线性插值；mean 全片均值；per_frame 每帧都算。</span>
+              </span>
+              <select class="control" id="p-sam-hand-mode" data-key="sam_hand_mode" aria-describedby="d-sam-hand-mode">
+                <option value="sample_linear" selected>sample_linear</option>
+                <option value="mean">mean</option>
+                <option value="per_frame">per_frame</option>
+              </select>
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-sam-sampling-seed" data-i18n="lbSamplingSeed">Sampling seed</label>
+                <span class="descr" id="d-sam-sampling-seed" data-i18n="dsSamplingSeed">抽样位置的随机种子。固定后同一视频抽样帧可复现。</span>
+              </span>
+              <input class="control" type="number" id="p-sam-sampling-seed" data-key="sam_sampling_seed"
+                     step="1" value="20261014" aria-describedby="d-sam-sampling-seed">
+            </li>
+          </ul>
+        </section>
+
+        <!-- ---------- GROUP 2: HAMER ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpHamer">HAMER</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-hamer-interval" data-i18n="lbHamerInterval">HaMeR interval</label>
+                <span class="descr" id="d-hamer-interval" data-i18n="dsHamerInterval">每几帧推理一次 HaMeR，其余帧用姿态插值补齐。</span>
+              </span>
+              <input class="control" type="number" id="p-hamer-interval" data-key="hamer_interval"
+                     min="1" max="10" step="1" value="2" aria-describedby="d-hamer-interval">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-hamer-smooth-window" data-i18n="lbSmoothWindow">Smooth window</label>
+                <span class="descr" id="d-hamer-smooth-window" data-i18n="dsSmoothWindow">HaMeR 手部平滑窗口，必须是奇数。</span>
+              </span>
+              <input class="control" type="number" id="p-hamer-smooth-window" data-key="hamer_smooth_window"
+                     min="5" max="51" step="2" value="11" aria-describedby="d-hamer-smooth-window">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-hamer-max-interp-gap" data-i18n="lbMaxInterpGap">Max interp gap</label>
+                <span class="descr" id="d-hamer-max-interp-gap" data-i18n="dsMaxInterpGap">超过这个帧数的缺失区间不强行桥接，避免把遮挡前后的手硬连起来。</span>
+              </span>
+              <input class="control" type="number" id="p-hamer-max-interp-gap" data-key="hamer_max_interp_gap"
+                     min="1" max="120" step="1" value="15" aria-describedby="d-hamer-max-interp-gap">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-hamer-batch-size" data-i18n="lbBatchSize">Batch size</label>
+                <span class="descr" id="d-hamer-batch-size" data-i18n="dsBatchSize">HaMeR 批大小。显存不足时调小。</span>
+              </span>
+              <input class="control" type="number" id="p-hamer-batch-size" data-key="hamer_batch_size"
+                     min="1" max="64" step="1" value="16" aria-describedby="d-hamer-batch-size">
+            </li>
+          </ul>
+        </section>
+
+        <!-- ---------- GROUP 3: GENERATION ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpGeneration">GENERATION</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-flow-steps" data-i18n="lbFlowSteps">Denoising steps</label>
+                <span class="descr" id="d-flow-steps" data-i18n="dsFlowSteps">FlowHMR 流匹配步数。越大越慢，20 步通常已够。</span>
+              </span>
+              <input class="control" type="number" id="p-flow-steps" data-key="flow_steps"
+                     min="1" max="100" step="1" value="20" aria-describedby="d-flow-steps">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-flow-cfg-scale" data-i18n="lbCfgScale">Guidance scale</label>
+                <span class="descr" id="d-flow-cfg-scale" data-i18n="dsCfgScale">条件引导强度。当前 12GB 预设只验证过 1.0。</span>
+              </span>
+              <input class="control" type="number" id="p-flow-cfg-scale" data-key="flow_cfg_scale"
+                     min="0.5" max="3" step="0.1" value="1.0" aria-describedby="d-flow-cfg-scale">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-flow-seed" data-i18n="lbFlowSeed">Motion seed</label>
+                <span class="descr" id="d-flow-seed" data-i18n="dsFlowSeed">生成噪声种子。同种子、同长度可复现同一段动作。</span>
+              </span>
+              <input class="control" type="number" id="p-flow-seed" data-key="flow_seed"
+                     step="1" value="0" aria-describedby="d-flow-seed">
+            </li>
+          </ul>
+        </section>
+
+        <!-- ---------- GROUP 4: ATTENTION ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpAttention">ATTENTION</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-attention-backend" data-i18n="lbAttentionBackend">Attention backend</label>
+                <span class="descr" id="d-attention-backend" data-i18n="dsAttentionBackend">注意力执行方式。query_batched 分批省显存；original 为原实现。</span>
+              </span>
+              <select class="control" id="p-attention-backend" data-key="attention_backend" aria-describedby="d-attention-backend">
+                <option value="query_batched" selected>query_batched</option>
+                <option value="original">original</option>
+              </select>
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-attention-query-chunk" data-i18n="lbQueryChunk">Query batch</label>
+                <span class="descr" id="d-attention-query-chunk" data-i18n="dsQueryChunk">每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。</span>
+              </span>
+              <input class="control" type="number" id="p-attention-query-chunk" data-key="attention_query_chunk"
+                     min="32" max="2048" step="32" value="256" aria-describedby="d-attention-query-chunk">
+            </li>
+          </ul>
+        </section>
+
+        <!-- ---------- GROUP 5: CAMERA ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpCamera">CAMERA</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-vggt-interval" data-i18n="lbVggtInterval">Camera interval</label>
+                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔。auto 按目标采样数自动计算。</span>
+              </span>
+              <input class="control" type="text" id="p-vggt-interval" data-key="vggt_interval"
+                     value="auto" autocomplete="off" spellcheck="false" inputmode="numeric" aria-describedby="d-vggt-interval">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-vggt-max-samples" data-i18n="lbVggtMaxSamples">Camera samples</label>
+                <span class="descr" id="d-vggt-max-samples" data-i18n="dsVggtMaxSamples">整段最多取多少张图估相机。太少会漏掉快速镜头运动。</span>
+              </span>
+              <input class="control" type="number" id="p-vggt-max-samples" data-key="vggt_max_samples"
+                     min="2" max="200" step="1" value="31" aria-describedby="d-vggt-max-samples">
+            </li>
+          </ul>
+        </section>
+
+        <!-- ---------- GROUP 6: LIMITS ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpLimits">LIMITS</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-max-generation-frames" data-i18n="lbMaxFrames">Max frames</label>
+                <span class="descr" id="d-max-generation-frames" data-i18n="dsMaxFrames">单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。</span>
+              </span>
+              <input class="control" type="number" id="p-max-generation-frames" data-key="max_generation_frames"
+                     min="8" max="3600" step="1" value="3600" aria-describedby="d-max-generation-frames">
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-threads" data-i18n="lbThreads">Threads</label>
+                <span class="descr" id="d-threads" data-i18n="dsThreads">CPU 线程数。</span>
+              </span>
+              <input class="control" type="number" id="p-threads" data-key="threads"
+                     min="1" max="64" step="1" value="8" aria-describedby="d-threads">
+            </li>
+          </ul>
+        </section>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== OUTPUT STRIP (above) ==========
+       Shows the finished artifact; REVEAL is the only button here and the
+       only red one outside the run strip. -->
+  <section class="strip strip-output" id="output-strip" aria-label="Output" hidden>
+    <p class="export-caption output-path" id="output-path"></p>
+    <div class="export">
+      <button type="button" class="btn btn-primary" id="btn-reveal" data-i18n="REVEAL">REVEAL</button>
+    </div>
+  </section>
+
+  <!-- ========== SETTINGS STRIP (below) ========== -->
+  <section class="strip" aria-label="Export">
+    <p class="export-caption">pipeline_settings.json</p>
+    <div class="export">
+      <button type="button" class="btn" id="btn-copy" data-i18n="COPY">COPY</button>
+      <button type="button" class="btn" id="btn-download" data-i18n="DOWNLOAD">DOWNLOAD</button>
+    </div>
+  </section>
+
+  <!-- ========== WATERMARK ========== -->
+  <figure class="watermark" aria-hidden="false">
+    <img class="watermark-mark" alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAJoAAACUCAYAAABr9TBnAAADG0lEQVR42u3dS05DMQxGYbvKBrr/xZopAyQo9+Uk35GYAW0vh+R3nvl+vwOnUf/8uVz9wby4AaKBaMAnDI/gVPLCHEc0Af+jQJ87yqbrBNFANEBGaxL6QbQtCpbUdUJGg26TaHNPnMto0MoSTQv42+/ME77vL+87dZ3Ebd/lEw1EA9GwV4GRigFDGVNUs2NTYZJYpzyf1HVCRgPRgDAzMOcUTT74+7LL8xkbB9tdP8sjz0fXCRlNN0w0YOuMVlqrnp9xmCKCrhNEA4gGxQD2LE6IZkZD1wmiAUQD0aDqbDESnxvMKqQWDSAaiAacKNodmab+kXe+fyF6rp4ZDcNyHdyMUc2XEtWkewsOvbau01EOMhpimSEUomnR4ukB22yU2QT9yTdIj4NB296ANTcVny64rhMyGogGWMot+PcVrXa9gnnDG+vqxiItv4tWKjtc/c8io0ExAKIBRDOH2W+GxfCGCXMtGnSdANFANBANIBqIBhAN0WeZUFq3j7h4fdzLcUu4YxGmrhMyGogGTH1sFWLdY6sIhMtl03VCRgPRgLCUO34dVKxm76m0aI4VuOO1k2gA0UA0YOFiIKNXIM+Yu2jRojl3jGgA0UA02DPQNpRm9Bqxzw1nEE7dM9DxmsKM3lXsDgWLPQOQ0UA0wJ6BzjnEYK/1aGYNosEVl2OT1qselKkWF9md6lAMgGgyE/YtBog1z7q1HwuEF8mg6wTRAKLJbUSDFg0gGogGEC2cuhidZwY6XXJRJ1RV3U4P2q66HSe8cHVZiqL16vsPo+uEjAaiAbeK9lRecDfCZM98TPzHrQ8Ca7diYtbipuxUh4wGEA3Rbc/AFWvVjxzL1O2kn46zBXnx32uKmYF8cKZhlhH2uuDijDIzABkNIBpsID6QBeqm16rG4T8/PCimug7+jknWPl15q8kMo/L5xxmR1HVCRgv7GEE0EA24sRi44xglXeXkF2eMxRbj5eKLDVPXaZUtZDQQTW5TDExw/d/qsuUqrzNu/CC1weUVM77H1HVCRgOIhq2XCWWoRrc9RmvY4m9YRtcJogFEQzu+APmzcdgrtdyOAAAAAElFTkSuQmCC">
+    <figcaption class="watermark-text">
+      <span>But nothing could conceal the things I feel my love</span>
+      <span>Can you teach me to be real?</span>
+      <span class="watermark-by">@JamiePaige</span>
+    </figcaption>
+  </figure>
+
+  <footer class="footer" id="output-line"></footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     i18n — English is the default; Chinese only when the browser
+     language starts with "zh" (or when explicitly chosen).
+     Both dictionaries must always carry the same key set.
+     ============================================================ */
+  var EN = {
+    statusIdle: 'IDLE',
+    statusRunning: 'RUNNING',
+    statusDone: 'DONE',
+    statusFailed: 'FAILED',
+    statusStopped: 'STOPPED',
+    statusOffline: 'SERVER OFFLINE',
+    bannerTitle: 'MISSING MODEL WEIGHTS',
+    bannerCount: '{n} of {m} files absent. Download them, then reload this page. See WEIGHTS_AND_ENV.md.',
+    SOURCE: 'SOURCE',
+    VIDEO: 'VIDEO',
+    pathPlaceholder: 'video file path',
+    DROP: 'DROP TO LOAD',
+    BROWSE: 'BROWSE',
+    RUN: 'RUN',
+    STOP: 'STOP',
+    STAGE: 'STAGE',
+    ELAPSED: 'ELAPSED',
+    VRAM: 'VRAM',
+    PEAK: 'PEAK',
+    LOG: 'LOG',
+    FILTERED: 'FILTERED',
+    PARAMETERS: 'PARAMETERS',
+    COPY: 'COPY',
+    COPIED: 'COPIED',
+    DOWNLOAD: 'DOWNLOAD',
+    REVEAL: 'REVEAL',
+    stagePrepare: 'PREPARE',
+    stageCamera: 'CAMERA',
+    stageSam: 'SAM',
+    stageGenerate: 'GENERATE',
+    stageHamer: 'HAMER',
+    stageMerge: 'MERGE',
+    grpHand: 'HAND',
+    grpHamer: 'HAMER',
+    grpGeneration: 'GENERATION',
+    grpAttention: 'ATTENTION',
+    grpCamera: 'CAMERA',
+    grpLimits: 'LIMITS',
+    lbHandInterval: 'Hand interval',
+    lbSamHandMode: 'Hand fill',
+    lbSamplingSeed: 'Sampling seed',
+    lbHamerInterval: 'HaMeR interval',
+    lbSmoothWindow: 'Smooth window',
+    lbMaxInterpGap: 'Max interp gap',
+    lbBatchSize: 'Batch size',
+    lbFlowSteps: 'Denoising steps',
+    lbCfgScale: 'Guidance scale',
+    lbFlowSeed: 'Motion seed',
+    lbAttentionBackend: 'Attention backend',
+    lbQueryChunk: 'Query batch',
+    lbVggtInterval: 'Camera interval',
+    lbVggtMaxSamples: 'Camera samples',
+    lbMaxFrames: 'Max frames',
+    lbThreads: 'Threads',
+    dsHandInterval: 'How many frames between real hand computations. Lower is closer to per-frame and slower.',
+    dsSamHandMode: 'How sampled hand features are filled between observations. sample_linear interpolates; mean uses one whole-clip value; per_frame computes every frame.',
+    dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
+    dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
+    dsSmoothWindow: 'HaMeR hand smoothing window. Must be odd.',
+    dsMaxInterpGap: 'Longer missing spans than this are not bridged, so hands before and after an occlusion are not forced together.',
+    dsBatchSize: 'HaMeR batch size. Lower it when VRAM is short.',
+    dsFlowSteps: 'FlowHMR flow-matching steps. More is slower; 20 is usually enough.',
+    dsCfgScale: 'Conditioning strength. Only 1.0 has been validated on the 12GB preset.',
+    dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
+    dsAttentionBackend: 'Attention execution. query_batched batches queries to save VRAM; original is the stock implementation.',
+    dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
+    dsVggtInterval: 'VGGT camera sampling interval. auto derives it from the target sample count.',
+    dsVggtMaxSamples: 'Maximum images used to estimate the camera. Too few misses fast camera motion.',
+    dsMaxFrames: 'Single-pass limit. At 30fps, 3600 frames is about two minutes. Longer input errors out instead of being truncated.',
+    dsThreads: 'CPU thread count.'
+  };
+
+  var ZH = {
+    statusIdle: '空闲',
+    statusRunning: '运行中',
+    statusDone: '完成',
+    statusFailed: '失败',
+    statusStopped: '已停止',
+    statusOffline: '服务器未连接',
+    bannerTitle: '缺少模型权重',
+    bannerCount: '{m} 个文件中缺少 {n} 个。下载后刷新本页。见 WEIGHTS_AND_ENV.md。',
+    SOURCE: '来源',
+    VIDEO: '视频',
+    pathPlaceholder: '视频文件路径',
+    DROP: '松开以载入',
+    BROWSE: '浏览…',
+    RUN: '开始',
+    STOP: '停止',
+    STAGE: '阶段',
+    ELAPSED: '已用',
+    VRAM: '显存',
+    PEAK: '峰值',
+    LOG: '日志',
+    FILTERED: '已过滤',
+    PARAMETERS: '参数',
+    COPY: '复制',
+    COPIED: '已复制',
+    DOWNLOAD: '下载',
+    REVEAL: '打开目录',
+    stagePrepare: '准备',
+    stageCamera: '相机',
+    stageSam: 'SAM',
+    stageGenerate: '生成',
+    stageHamer: 'HaMeR',
+    stageMerge: '合并',
+    grpHand: '手部',
+    grpHamer: 'HaMeR',
+    grpGeneration: '生成',
+    grpAttention: '注意力',
+    grpCamera: '相机',
+    grpLimits: '限制',
+    lbHandInterval: '手部间隔',
+    lbSamHandMode: '手部补齐方式',
+    lbSamplingSeed: '抽样种子',
+    lbHamerInterval: 'HaMeR间隔',
+    lbSmoothWindow: '平滑窗口',
+    lbMaxInterpGap: '最大插值间隔',
+    lbBatchSize: '批大小',
+    lbFlowSteps: '去噪步数',
+    lbCfgScale: '引导强度',
+    lbFlowSeed: '运动种子',
+    lbAttentionBackend: '注意力后端',
+    lbQueryChunk: '查询批大小',
+    lbVggtInterval: '相机间隔',
+    lbVggtMaxSamples: '相机采样数',
+    lbMaxFrames: '最大帧数',
+    lbThreads: '线程数',
+    dsHandInterval: '每几帧真实计算一次双手。越小越接近逐帧，越慢。',
+    dsSamHandMode: '抽样帧之间的手部特征如何补齐。sample_linear 线性插值；mean 全片均值；per_frame 每帧都算。',
+    dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
+    dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
+    dsSmoothWindow: 'HaMeR 手部平滑窗口，必须是奇数。',
+    dsMaxInterpGap: '超过这个帧数的缺失区间不强行桥接，避免把遮挡前后的手硬连起来。',
+    dsBatchSize: 'HaMeR 批大小。显存不足时调小。',
+    dsFlowSteps: 'FlowHMR 流匹配步数。越大越慢，20 步通常已够。',
+    dsCfgScale: '条件引导强度。当前 12GB 预设只验证过 1.0。',
+    dsFlowSeed: '生成噪声种子。同种子、同长度可复现同一段动作。',
+    dsAttentionBackend: '注意力执行方式。query_batched 分批省显存；original 为原实现。',
+    dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
+    dsVggtInterval: 'VGGT 相机抽样间隔。auto 按目标采样数自动计算。',
+    dsVggtMaxSamples: '整段最多取多少张图估相机。太少会漏掉快速镜头运动。',
+    dsMaxFrames: '单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。',
+    dsThreads: 'CPU 线程数。'
+  };
+
+  var DICTS = { en: EN, zh: ZH };
+  var LANG_KEY = 'mocapkit.lang';
+  var STATUSES = {
+    idle: 'statusIdle',
+    running: 'statusRunning',
+    done: 'statusDone',
+    failed: 'statusFailed',
+    stopped: 'statusStopped',
+    offline: 'statusOffline'
+  };
+  var STAGES = {
+    prepare: 'stagePrepare',
+    camera: 'stageCamera',
+    sam: 'stageSam',
+    generate: 'stageGenerate',
+    hamer: 'stageHamer',
+    merge: 'stageMerge'
+  };
+  var MAX_LOG_LINES = 500;
+
+  var lang = 'en';
+  var dict = EN;
+
+  function detectLang() {
+    var saved = null;
+    try { saved = window.localStorage.getItem(LANG_KEY); } catch (err) { saved = null; }
+    if (saved === 'zh') { return 'zh'; }
+    if (saved === 'en') { return 'en'; }
+    var nav = String((navigator.languages && navigator.languages[0]) || navigator.language || 'en');
+    return /^zh/i.test(nav) ? 'zh' : 'en';
+  }
+
+  /* ================= DOM ================= */
+  var outLine = document.getElementById('output-line');
+  var outStrip = document.getElementById('output-strip');
+  var outPath = document.getElementById('output-path');
+
+  var langBtn = document.getElementById('lang-toggle');
+  var chip = document.getElementById('status-chip');
+  var chipText = document.getElementById('status-text');
+
+  var runstrip = document.getElementById('runstrip');
+  var videoInput = document.getElementById('video-path');
+  var runBtn = document.getElementById('btn-run');
+  var stopBtn = document.getElementById('btn-stop');
+
+  var progressStrip = document.getElementById('progress-strip');
+  var stageText = document.getElementById('stage-text');
+  var bar = document.getElementById('bar');
+  var barFill = document.getElementById('bar-fill');
+  var elapsedText = document.getElementById('elapsed-text');
+  var vramText = document.getElementById('vram-text');
+  var peakText = document.getElementById('peak-text');
+
+  var logToggle = document.getElementById('log-toggle');
+  var logBody = document.getElementById('log-body');
+  var logScroll = document.getElementById('log-scroll');
+  var logLines = document.getElementById('log-lines');
+  var logCount = document.getElementById('log-count');
+  var filteredCount = document.getElementById('filtered-count');
+  var logGlyphOpen = document.getElementById('log-glyph-open');
+  var logGlyphClose = document.getElementById('log-glyph-close');
+
+  var panelToggle = document.getElementById('panel-toggle');
+  var panelBody = document.getElementById('panel-body');
+  var glyphOpen = document.getElementById('glyph-open');
+  var glyphClose = document.getElementById('glyph-close');
+
+  var copyBtn = document.getElementById('btn-copy');
+  var dlBtn = document.getElementById('btn-download');
+  var revealBtn = document.getElementById('btn-reveal');
+  var browseBtn = document.getElementById('btn-browse');
+  var browseBusy = false;
+
+  var banner = document.getElementById('weights-banner');
+  var bannerCount = document.getElementById('banner-count');
+  var bannerList = document.getElementById('banner-list');
+
+  /* ================= i18n rendering ================= */
+  var I18N_NODES = Array.prototype.slice.call(document.querySelectorAll('[data-i18n]'));
+  var I18N_ATTRS = Array.prototype.slice.call(document.querySelectorAll('[data-i18n-attr]'));
+
+  function t(key) {
+    var v = dict[key];
+    return (typeof v === 'string') ? v : key;
+  }
+  /* {n} / {m} substitution; split/join keeps "$" harmless in the values */
+  function fmt(key, vars) {
+    var s = t(key);
+    for (var k in vars) {
+      if (Object.prototype.hasOwnProperty.call(vars, k)) {
+        s = s.split('{' + k + '}').join(String(vars[k]));
+      }
+    }
+    return s;
+  }
+  function applyI18nAttrs() {
+    for (var i = 0; i < I18N_ATTRS.length; i++) {
+      var el = I18N_ATTRS[i];
+      var spec = el.getAttribute('data-i18n-attr');
+      var parts = spec.split(':');
+      el.setAttribute(parts[0], t(parts[1]));
+    }
+  }
+  function applyLang(next) {
+    lang = next;
+    dict = DICTS[lang];
+    document.documentElement.lang = (lang === 'zh') ? 'zh' : 'en';
+    for (var i = 0; i < I18N_NODES.length; i++) {
+      I18N_NODES[i].textContent = t(I18N_NODES[i].getAttribute('data-i18n'));
+    }
+    applyI18nAttrs();
+    /* the label names the language you would switch TO */
+    langBtn.textContent = (lang === 'zh') ? 'EN' : '中文';
+    langBtn.lang = (lang === 'zh') ? 'en' : 'zh';
+    /* re-render every live, language-dependent value */
+    renderStage();
+    renderBanner();
+    chipText.textContent = t(STATUSES[effectiveState()]);
+    renderFooter();
+    copyBtn.textContent = copied ? t('COPIED') : t('COPY');
+  }
+  function saveLang(next) {
+    try { window.localStorage.setItem(LANG_KEY, next); } catch (err) { /* ignore */ }
+  }
+
+  /* ================= panel toggles ================= */
+  function setPanel(toggleBtn, body, gOpen, gClose, open) {
+    toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    gOpen.hidden = open;
+    gClose.hidden = !open;
+    body.hidden = !open;
+  }
+  panelToggle.addEventListener('click', function () {
+    setPanel(panelToggle, panelBody, glyphOpen, glyphClose, panelToggle.getAttribute('aria-expanded') !== 'true');
+  });
+  logToggle.addEventListener('click', function () {
+    var open = logToggle.getAttribute('aria-expanded') !== 'true';
+    setPanel(logToggle, logBody, logGlyphOpen, logGlyphClose, open);
+    /* lines that arrived while the panel was collapsed could not move the
+       scroll position, so opening the panel lands on the newest line */
+    if (open) { logScroll.scrollTop = logScroll.scrollHeight; }
+  });
+
+  /* ================= server state ================= */
+  var serverOnline = false;   /* confirmed reachable via HTTP */
+  var streamOnline = false;   /* EventSource currently open */
+  var streamRetry = null;     /* pending EventSource recreate */
+  var probeRetry = null;      /* pending HTTP re-probe */
+  var probeActive = null;     /* in-flight /api/settings probe */
+  var appliedServerSettings = false;
+  var state = 'idle';         /* last state reported by the stream */
+  var runGuard = false;       /* RUN clicked, waiting for the first status event */
+  var lastStatus = null;
+  var elapsedBase = 0;        /* seconds reported by the server */
+  var elapsedAt = 0;          /* Date.now() when that value arrived */
+  var elapsedTimer = null;
+  var runError = '';
+  var copied = false;
+  var copyTimer = null;
+  var logTotal = 0;
+  var stream = null;
+  var preflight = null;       /* last /api/preflight payload; null = not told yet */
+  var preflightSig = '';      /* change detection: no DOM churn per status tick */
+  var preflightDone = false;  /* boot probe already answered */
+
+  /* ================= formatting ================= */
+  function pad2(n) { return (n < 10 ? '0' : '') + String(n); }
+
+  function mmss(sec) {
+    if (!isFinite(sec) || sec < 0) { sec = 0; }
+    var s = Math.floor(sec);
+    return pad2(Math.floor(s / 60)) + ':' + pad2(s % 60);
+  }
+  function currentElapsed() {
+    if (state !== 'running') { return elapsedBase; }
+    return elapsedBase + Math.max(0, (Date.now() - elapsedAt) / 1000);
+  }
+  function renderElapsed() { elapsedText.textContent = mmss(currentElapsed()); }
+
+  function gb(mib) {
+    if (typeof mib !== 'number' || !isFinite(mib)) { return '—'; }
+    return (mib / 1024).toFixed(1) + ' GB';
+  }
+
+  /* ================= status / progress rendering ================= */
+  /* "online" = the local server answered, over HTTP or over the event stream.
+     While the stream is merely reconnecting the last known state stays on the
+     chip: a dropped stream is not the same thing as an unreachable server. */
+  function uiOnline() { return serverOnline || streamOnline; }
+
+  function effectiveState() {
+    if (!uiOnline()) {
+      if (state === 'running') { return 'running'; }
+      if (state === 'done' || state === 'failed' || state === 'stopped') { return state; }
+      return 'offline';
+    }
+    return state;
+  }
+  function isRunning() { return state === 'running'; }
+
+  /* ---- missing model weights -------------------------------------------
+     Unknown payload = assume ready: nothing is gated until the server says
+     otherwise. ready:false disables RUN and shows the banner; STOP is
+     untouched so a live run can always be stopped. */
+  function weightsReady() { return !(preflight && preflight.ready === false); }
+
+  function renderBanner() {
+    var p = preflight;
+    if (weightsReady()) {
+      banner.hidden = true;
+      bannerCount.textContent = '';
+      bannerList.textContent = '';
+      bannerList.hidden = true;
+      return;
+    }
+    var missing = (p.missing && p.missing.length) ? p.missing : [];
+    var total = (typeof p.total === 'number' && isFinite(p.total)) ? p.total : missing.length;
+    banner.hidden = false;
+    bannerCount.textContent = fmt('bannerCount', { n: missing.length, m: total });
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < missing.length; i++) {
+      var e = missing[i] || {};
+      var li = document.createElement('li');
+      li.className = 'banner-item';
+      var label = document.createElement('span');
+      label.className = 'banner-label';
+      label.textContent = (typeof e.label === 'string') ? e.label : '';
+      var path = document.createElement('span');
+      path.className = 'banner-path';
+      path.textContent = (typeof e.path === 'string') ? e.path : '';
+      li.appendChild(label);
+      li.appendChild(path);
+      if (typeof e.source === 'string' && e.source !== '') {
+        var src = document.createElement('span');
+        src.className = 'banner-source';
+        var pre = document.createElement('span');
+        pre.className = 'banner-src';
+        pre.textContent = t('SOURCE');
+        src.appendChild(pre);
+        src.appendChild(document.createTextNode(e.source));
+        li.appendChild(src);
+      }
+      frag.appendChild(li);
+    }
+    bannerList.textContent = '';
+    bannerList.appendChild(frag);
+    bannerList.hidden = missing.length === 0;
+  }
+
+  function applyPreflight(p) {
+    if (!p || typeof p !== 'object') { return; }
+    var sig = [p.ready ? 1 : 0, p.present, p.total, JSON.stringify(p.missing || [])].join('|');
+    preflight = p;
+    if (sig === preflightSig) { return; }
+    preflightSig = sig;
+    renderBanner();
+    syncButtons();
+  }
+
+  function syncButtons() {
+    var online = uiOnline();
+    var ready = weightsReady();
+    runBtn.disabled = !online || isRunning() || runGuard || !ready;
+    /* when the absent weights are the reason, the banner is the description */
+    if (ready) { runBtn.removeAttribute('aria-describedby'); }
+    else { runBtn.setAttribute('aria-describedby', 'weights-banner'); }
+    stopBtn.disabled = !online || !isRunning();
+    /* the picker needs the server too, and only one dialog at a time */
+    browseBtn.disabled = !online || browseBusy;
+  }
+
+  function renderStage() {
+    var s = null;
+    if (lastStatus && typeof lastStatus.stage === 'string' && STAGES[lastStatus.stage]) {
+      s = lastStatus.stage;
+    }
+    stageText.textContent = s ? t(STAGES[s]) : '—';
+  }
+
+  function renderProgress() {
+    var p = (lastStatus && lastStatus.progress) ? lastStatus.progress : null;
+    var total = (p && typeof p.total === 'number' && isFinite(p.total)) ? p.total : null;
+    var current = (p && typeof p.current === 'number' && isFinite(p.current)) ? p.current : 0;
+    if (total === null) {
+      bar.hidden = true;
+      barFill.style.width = '0%';
+      bar.setAttribute('aria-valuenow', '0');
+    } else {
+      var pct = total > 0 ? Math.max(0, Math.min(100, (current / total) * 100)) : 0;
+      bar.hidden = false;
+      barFill.style.width = pct.toFixed(1) + '%';
+      bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+    }
+  }
+
+  function renderVram() {
+    var gpu = (lastStatus && lastStatus.gpu) ? lastStatus.gpu : null;
+    if (!gpu || typeof gpu.used_mib !== 'number' || typeof gpu.total_mib !== 'number') {
+      vramText.textContent = '—';
+    } else {
+      vramText.textContent = (gpu.used_mib / 1024).toFixed(1) + ' / ' + (gpu.total_mib / 1024).toFixed(1) + ' GB';
+    }
+    peakText.textContent = (gpu && typeof gpu.torch_peak_gib === 'number') ? gb(gpu.torch_peak_gib * 1024) : '—';
+  }
+
+  function renderFill() {
+    var f = (lastStatus && typeof lastStatus.filtered_lines === 'number') ? lastStatus.filtered_lines : 0;
+    filteredCount.textContent = String(f);
+  }
+
+  function renderFooter() {
+    /* the artifact path sits in its own strip above the settings strip */
+    var out = (lastStatus && typeof lastStatus.output === 'string') ? lastStatus.output : '';
+    outPath.textContent = out;
+    outStrip.hidden = (out === '');
+    /* the footer line is reserved for failures only */
+    outLine.textContent = runError;
+    outLine.hidden = (runError === '');
+  }
+
+  function serverVideo() {
+    return (lastStatus && typeof lastStatus.video === 'string' && lastStatus.video) ? lastStatus.video : '';
+  }
+
+  function applyStatus(d) {
+    if (!d || typeof d !== 'object') { return; }
+    lastStatus = d;
+    runGuard = false;
+    runError = '';
+    renderFooter();
+    var prev = state;
+    state = (typeof d.state === 'string' && STATUSES[d.state]) ? d.state : 'idle';
+    chipText.textContent = t(STATUSES[effectiveState()]);
+
+    elapsedBase = (typeof d.elapsed_seconds === 'number' && isFinite(d.elapsed_seconds)) ? d.elapsed_seconds : 0;
+    elapsedAt = Date.now();
+    renderElapsed();
+
+    var sv = serverVideo();
+    if (sv && (videoInput.value.trim() === '' || prev === 'running' || state === 'running' || state === 'done')) {
+      videoInput.value = sv;
+    }
+
+    renderStage();
+    renderProgress();
+    renderVram();
+    renderFill();
+    renderFooter();
+    applyPreflight(d.preflight);
+    syncButtons();
+
+    if (state === 'running') { startElapsed(); } else { stopElapsed(); }
+  }
+
+  function startElapsed() {
+    if (elapsedTimer === null) { elapsedTimer = window.setInterval(renderElapsed, 1000); }
+  }
+  function stopElapsed() {
+    if (elapsedTimer !== null) { window.clearInterval(elapsedTimer); elapsedTimer = null; }
+  }
+
+  /* ================= log ================= */
+  function nearBottom() {
+    return (logScroll.scrollHeight - logScroll.scrollTop - logScroll.clientHeight) < 24;
+  }
+  function appendLog(line, kind) {
+    var atBottom = nearBottom();
+    logTotal += 1;
+    var li = document.createElement('li');
+    li.className = 'log-line' + (kind === 'error' ? ' is-error' : (kind === 'stage' ? ' is-stage' : ''));
+    var n = document.createElement('span');
+    n.className = 'n';
+    n.setAttribute('aria-hidden', 'true');
+    n.textContent = String(logTotal);
+    var body = document.createElement('span');
+    body.className = 't';
+    body.textContent = String(line);
+    li.appendChild(n);
+    li.appendChild(body);
+    logLines.appendChild(li);
+    while (logLines.children.length > MAX_LOG_LINES) {
+      logLines.removeChild(logLines.firstChild);
+    }
+    logCount.textContent = String(logTotal);
+    if (atBottom) { logScroll.scrollTop = logScroll.scrollHeight; }
+  }
+
+  /* ================= footer line / inline error ================= */
+  function setRunError(msg) {
+    runError = msg ? String(msg) : '';
+    renderFooter();
+  }
+
+  /* ================= SSE ================= */
+  /* EventSource reconnects on its own; the callbacks only keep the chip and
+     the buttons in sync, and never overwrite a run that is clearly alive. */
+  function scheduleRetry() {
+    if (streamRetry !== null) { return; }
+    streamRetry = window.setTimeout(function () {
+      streamRetry = null;
+      connectStream();
+    }, 3000);
+  }
+  function connectStream() {
+    if (stream) { stream.close(); stream = null; }
+    if (typeof window.EventSource !== 'function') { return; }
+    try {
+      stream = new window.EventSource('/api/events');
+    } catch (err) {
+      stream = null;
+      syncButtons();
+      return;
+    }
+    stream.addEventListener('open', function () {
+      streamOnline = true;
+      chipText.textContent = t(STATUSES[effectiveState()]);
+      syncButtons();
+      if (!serverOnline) { probeServer(); }
+    });
+    stream.addEventListener('status', function (ev) {
+      var data = null;
+      try { data = JSON.parse(ev.data); } catch (err) { data = null; }
+      if (data) { applyStatus(data); }
+    });
+    stream.addEventListener('log', function (ev) {
+      var data = null;
+      try { data = JSON.parse(ev.data); } catch (err) { data = null; }
+      if (data && typeof data.line === 'string') { appendLog(data.line, data.kind); }
+    });
+    stream.addEventListener('error', function () {
+      streamOnline = false;
+      syncButtons();
+      if (!state || state === 'idle' || state === 'done' || state === 'failed' || state === 'stopped') {
+        chipText.textContent = t(STATUSES[effectiveState()]);
+      }
+      scheduleRetry();
+    });
+  }
+
+  /* ================= HTTP helpers ================= */
+  function jsonFetch(url, opts) {
+    return window.fetch(url, opts).then(function (res) {
+      return res.text().then(function (txt) {
+        var data = null;
+        try { data = JSON.parse(txt); } catch (err) { data = null; }
+        if (!data) { throw new Error('bad response'); }
+        if (data.ok === false) { throw new Error(data.error ? String(data.error) : 'request failed'); }
+        return data;
+      });
+    });
+  }
+
+  function probeServer() {
+    if (probeActive) { return probeActive; }
+    if (probeRetry !== null) { window.clearTimeout(probeRetry); probeRetry = null; }
+    probeActive = jsonFetch('/api/settings', { headers: { 'Accept': 'application/json' } }).then(function (data) {
+      var s = (data && data.settings) ? data.settings : null;
+      if (s && !appliedServerSettings) {
+        appliedServerSettings = true;
+        applySettings(s);
+      }
+      if (!s) { throw new Error('no settings'); }
+      serverOnline = true;
+      chipText.textContent = t(STATUSES[effectiveState()]);
+      syncButtons();
+      probeActive = null;
+      return true;
+    }, function () {
+      serverOnline = false;
+      chipText.textContent = t(STATUSES[effectiveState()]);
+      syncButtons();
+      probeActive = null;
+      if (probeRetry === null) {
+        probeRetry = window.setTimeout(function () {
+          probeRetry = null;
+          probeServer();
+        }, 4000);
+      }
+      return false;
+    });
+    return probeActive;
+  }
+
+  /* one explicit preflight call at boot so the banner can appear before the
+     first status event; every status payload refreshes it afterwards */
+  function probePreflight() {
+    if (preflightDone) { return; }
+    jsonFetch('/api/preflight', { headers: { 'Accept': 'application/json' } }).then(function (data) {
+      preflightDone = true;
+      /* accept both {"ok":true,"preflight":{…}} and a flattened {"ok":true,"ready":…} */
+      var p = (data && data.preflight) ? data.preflight
+            : ((data && typeof data.ready === 'boolean') ? data : null);
+      applyPreflight(p);
+    }, function () {
+      /* offline, or the endpoint is missing: status events still carry it */
+    });
+  }
+
+  /* ================= settings: controls <-> object ================= */
+  /* exact key order required by the pipeline */
+  function controlMap() {
+    var nodes = document.querySelectorAll('.settings [data-key]');
+    var map = {};
+    for (var i = 0; i < nodes.length; i++) { map[nodes[i].getAttribute('data-key')] = nodes[i]; }
+    return map;
+  }
+  var CTRL = controlMap();
+
+  function numOf(el, fallback) {
+    if (!el) { return fallback; }
+    var n = parseFloat(el.value);
+    return isFinite(n) ? n : fallback;
+  }
+  function cameraIntervalValue() {
+    var el = CTRL.vggt_interval;
+    if (!el) { return 'auto'; }
+    var raw = String(el.value).trim().toLowerCase();
+    if (raw === 'auto') { return 'auto'; }
+    var m = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : NaN;
+    return (isFinite(m) && m >= 1) ? m : 'auto';
+  }
+  function textOf(el, fallback) {
+    var v = el ? String(el.value) : '';
+    return v === '' ? fallback : v;
+  }
+
+  function settings() {
+    return {
+      sam_hand_interval: numOf(CTRL.sam_hand_interval, 4),
+      sam_sampling_seed: numOf(CTRL.sam_sampling_seed, 20261014),
+      sam_hand_mode: textOf(CTRL.sam_hand_mode, 'sample_linear'),
+      hamer_interval: numOf(CTRL.hamer_interval, 2),
+      hamer_batch_size: numOf(CTRL.hamer_batch_size, 16),
+      hamer_smooth_window: numOf(CTRL.hamer_smooth_window, 11),
+      hamer_max_interp_gap: numOf(CTRL.hamer_max_interp_gap, 15),
+      flow_seed: numOf(CTRL.flow_seed, 0),
+      flow_steps: numOf(CTRL.flow_steps, 20),
+      flow_cfg_scale: numOf(CTRL.flow_cfg_scale, 1.0),
+      attention_backend: textOf(CTRL.attention_backend, 'query_batched'),
+      attention_query_chunk: numOf(CTRL.attention_query_chunk, 256),
+      vggt_interval: cameraIntervalValue(),
+      vggt_max_samples: numOf(CTRL.vggt_max_samples, 31),
+      max_generation_frames: numOf(CTRL.max_generation_frames, 3600),
+      threads: numOf(CTRL.threads, 8)
+    };
+  }
+  function jsonText() {
+    return JSON.stringify(settings(), null, 2) + '\n';
+  }
+
+  function setSelectValue(el, value, fallback) {
+    var v = (typeof value === 'string') ? value : fallback;
+    var found = false;
+    for (var i = 0; i < el.options.length; i++) {
+      if (el.options[i].value === v) { found = true; break; }
+    }
+    el.value = found ? v : fallback;
+  }
+
+  /* initialise the 16 controls from /api/settings; the hardcoded defaults in the
+     markup are the fallback for every key the server does not send */
+  function applySettings(s) {
+    if (!s) { return; }
+    var d = {
+      sam_hand_interval: 4, sam_sampling_seed: 20261014, sam_hand_mode: 'sample_linear',
+      hamer_interval: 2, hamer_batch_size: 16, hamer_smooth_window: 11,
+      hamer_max_interp_gap: 15, flow_seed: 0, flow_steps: 20, flow_cfg_scale: 1.0,
+      attention_backend: 'query_batched', attention_query_chunk: 256,
+      vggt_interval: 'auto', vggt_max_samples: 31, max_generation_frames: 3600, threads: 8
+    };
+    for (var key in d) {
+      if (!Object.prototype.hasOwnProperty.call(d, key)) { continue; }
+      var el = CTRL[key];
+      if (!el) { continue; }
+      var raw = s[key];
+      var v;
+      if (typeof raw === 'number' && isFinite(raw)) { v = String(raw); }
+      else if (typeof raw === 'string' && raw !== '') { v = raw; }
+      else { v = String(d[key]); }
+      if (el.tagName === 'SELECT') {
+        setSelectValue(el, v, String(d[key]));
+      } else {
+        el.value = v;
+      }
+    }
+  }
+
+  /* ================= actions ================= */
+  function startRun() {
+    if (runGuard) { return; }
+    runGuard = true;
+    runBtn.disabled = true;
+    setRunError('');
+    var body = settings();
+    body.video = String(videoInput.value).trim();
+    jsonFetch('/api/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function () {
+      /* stay disabled until the next status event clears the guard */
+    }, function (err) {
+      runGuard = false;
+      setRunError(err && err.message ? err.message : 'run failed');
+      syncButtons();
+    });
+  }
+
+  function stopRun() {
+    stopBtn.disabled = true;
+    jsonFetch('/api/stop', { method: 'POST' }).then(function () {
+      /* enablement returns with the next status event */
+    }, function (err) {
+      setRunError(err && err.message ? err.message : 'stop failed');
+      syncButtons();
+    });
+  }
+
+  runBtn.addEventListener('click', startRun);
+  stopBtn.addEventListener('click', stopRun);
+
+  /* native file picker on the server; returns a real path, no upload copy.
+     The dialog is modal, so this request stays open until the user chooses. */
+  browseBtn.addEventListener('click', function () {
+    if (browseBusy) { return; }
+    browseBusy = true;
+    browseBtn.disabled = true;
+    jsonFetch('/api/browse', { method: 'POST' }).then(function (data) {
+      if (data && data.path) { videoInput.value = data.path; }
+      browseBusy = false;
+      syncButtons();
+    }, function (err) {
+      browseBusy = false;
+      var msg = err && err.message ? err.message : 'browse failed';
+      if (msg !== 'cancelled') { setRunError(msg); }
+      syncButtons();
+    });
+  });
+
+  revealBtn.addEventListener('click', function () {
+    jsonFetch('/api/reveal', { method: 'POST' }).then(function () {}, function (err) {
+      setRunError(err && err.message ? err.message : 'reveal failed');
+    });
+  });
+
+  /* ================= export ================= */
+  /* clipboard, with a fallback for non-secure origins */
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', 'readonly');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+      document.body.removeChild(ta);
+      ok ? resolve() : reject(new Error('copy failed'));
+    });
+  }
+
+  copyBtn.addEventListener('click', function () {
+    copyText(jsonText()).then(function () {
+      copied = true;
+      copyBtn.textContent = t('COPIED');
+      if (copyTimer !== null) { window.clearTimeout(copyTimer); }
+      copyTimer = window.setTimeout(function () {
+        copied = false;
+        copyBtn.textContent = t('COPY');
+        copyTimer = null;
+      }, 1200);
+    }, function () {
+      /* clipboard unavailable: keep the label truthful */
+    });
+  });
+
+  dlBtn.addEventListener('click', function () {
+    var blob = new Blob([jsonText()], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'pipeline_settings.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
+  });
+
+  /* camera interval: keep the field to "auto" or a positive integer */
+  var camInterval = CTRL.vggt_interval;
+  if (camInterval) {
+    camInterval.addEventListener('blur', function () {
+      camInterval.value = String(cameraIntervalValue());
+    });
+    camInterval.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { camInterval.value = String(cameraIntervalValue()); }
+    });
+  }
+
+  /* ================= drag & drop upload ================= */
+  var dragDepth = 0;
+  function hasFiles(e) {
+    var dt = e.dataTransfer;
+    if (!dt) { return false; }
+    if (dt.types) {
+      for (var i = 0; i < dt.types.length; i++) {
+        if (dt.types[i] === 'Files') { return true; }
+      }
+    }
+    return false;
+  }
+  runstrip.addEventListener('dragenter', function (e) {
+    if (!hasFiles(e)) { return; }
+    e.preventDefault();
+    dragDepth += 1;
+    runstrip.classList.add('drag');
+  });
+  runstrip.addEventListener('dragover', function (e) {
+    if (!hasFiles(e)) { return; }
+    e.preventDefault();
+    if (e.dataTransfer) { e.dataTransfer.dropEffect = 'copy'; }
+  });
+  runstrip.addEventListener('dragleave', function () {
+    dragDepth -= 1;
+    if (dragDepth <= 0) { dragDepth = 0; runstrip.classList.remove('drag'); }
+  });
+  runstrip.addEventListener('drop', function (e) {
+    if (!hasFiles(e)) { return; }
+    e.preventDefault();
+    dragDepth = 0;
+    runstrip.classList.remove('drag');
+    var dt = e.dataTransfer;
+    var file = (dt && dt.files && dt.files.length) ? dt.files[0] : null;
+    if (!file) { return; }
+    if (!uiOnline()) {
+      setRunError(t('statusOffline'));
+      return;
+    }
+    jsonFetch('/api/upload?name=' + encodeURIComponent(file.name), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file
+    }).then(function (data) {
+      if (data && typeof data.path === 'string') {
+        videoInput.value = data.path;
+        setRunError('');
+      }
+    }, function (err) {
+      setRunError(err && err.message ? err.message : 'upload failed');
+    });
+  });
+  /* never let a file dropped outside the strip navigate away from the console */
+  document.addEventListener('dragover', function (e) {
+    if (hasFiles(e)) { e.preventDefault(); }
+  });
+  document.addEventListener('drop', function (e) {
+    if (hasFiles(e)) { e.preventDefault(); }
+  });
+
+  /* ================= language toggle ================= */
+  langBtn.addEventListener('click', function () {
+    var next = (lang === 'zh') ? 'en' : 'zh';
+    saveLang(next);
+    applyLang(next);
+  });
+
+  /* a real edit clears a stale error line */
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (!el || !el.tagName) { return; }
+    var tag = el.tagName;
+    if (tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA') { return; }
+    if (el === videoInput) { return; }
+    if (runError) { setRunError(''); }
+  });
+
+  /* ================= boot =================
+     Cold start: the hardcoded defaults are already in the markup, the chip
+     reads SERVER OFFLINE, and both RUN and STOP are disabled. A successful
+     probe or an SSE open flips the console online. */
+  applyLang(detectLang());
+  syncButtons();
+  connectStream();
+  probeServer();
+  probePreflight();
+})();
+</script>
+</body>
+</html>
