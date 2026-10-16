@@ -3,24 +3,6 @@
 This repository contains source code only. Model weights and the Python
 environment are intentionally **not** committed.
 
-## Why not in Git
-
-The weights this kit loads add up to **18.04 GiB across 28 files**. They are
-third-party artifacts with their own terms, and two of them cannot legally be
-mirrored at all:
-
-- SMPL-H / MANO body models require registration and licence acceptance. They
-  are not redistributable.
-- SAM-3D-Body and VGGT-Omega are distributed from gated Hugging Face
-  repositories, so a download requires your own account and an access request.
-
-A Git repository is also the wrong transport for them: history would keep every
-future revision forever, and GitHub rejects files above 100 MiB.
-
-`weights_manifest.json` lists every file this kit expects, with its exact size
-and SHA-256, so you can confirm an assembled set matches the one this code was
-validated against.
-
 ## Where each file comes from
 
 | Target path | Source |
@@ -38,23 +20,7 @@ The upstream instructions in `app/flowhmr/docs/install.md` and the layout table
 in `app/flowhmr/docs/resources.md` are the authoritative acquisition steps; this
 file only records which files the packaged entry points actually read.
 
-## Recommended handling
-
-1. **Keep weights out of Git.** This repository ships code plus the manifest.
-2. **Assemble them next to the code** using the upstream install commands, then
-   verify against `weights_manifest.json`.
-3. **If you want a ready-to-run download**, publish the assembled tree as a
-   separate artifact rather than a commit: split it into under-2-GiB parts and
-   attach them to a GitHub Release, or host it on Hugging Face / cloud storage.
-   Do not re-upload SMPL-H/MANO or the gated FAIR checkpoints publicly.
-
 ## Environment
-
-The runtime this project was validated on:
-
-- Windows, Python **3.11.4**
-- PyTorch **2.5.1+cu121**, CUDA 12.1 runtime, cuDNN 9.1.0
-- 12 GiB GPU is the design target
 
 `env/requirements-lock-win-py311.txt` is a full `pip freeze` of that
 environment with local machine paths removed. Three packages are editable
