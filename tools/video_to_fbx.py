@@ -57,6 +57,80 @@ def save_json(path, value):
     tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding='utf-8')
     os.replace(tmp, path)
 
+OOM_EXIT = 3
+
+
+def is_oom(exc) -> bool:
+    text = f'{type(exc).__name__}: {exc}'.lower()
+    return 'out of memory' in text or 'outofmemoryerror' in text
+
+
+def _video_info(job: Path) -> dict:
+    try:
+        return json.loads((job / 'video_info.json').read_text(encoding='utf-8'))
+    except Exception:
+        return {}
+
+
+def oom_marker(stage: str, job: Path) -> str:
+    """Machine-readable line the console turns into a localized one-liner."""
+    info = _video_info(job) if stage == 'camera' else {}
+    parts = [f'stage={stage}']
+    for key, name in (('vggt_samples', 'samples'), ('vggt_interval', 'interval'), ('frames', 'frames')):
+        if info.get(key) not in (None, ''):
+            parts.append(f'{name}={info[key]}')
+    return '[OOM] ' + ' '.join(parts)
+
+
+# Measured on an RTX 3060 12 GiB with a 2764-frame 1080x1920 clip:
+#   peak GiB ~= 5.93 + 0.0427 * sampled_views
+# The intercept is the VGGT-Omega weights plus the attention transient; the
+# slope is the per-view cost at 512 px. See logs/vggt_vram_curve.json.
+VGGT_VRAM_INTERCEPT = 5.93
+VGGT_VRAM_PER_VIEW = 0.0427
+# Empirically only ~2 GiB of spill into shared memory actually works: 174 views
+# (13.36 GiB) completed, 232 views (15.9 GiB) ran out. Beyond that the driver
+# cannot page enough and the allocation simply fails.
+VGGT_SPILL_CAPACITY = 2.0
+# The fit was measured on 1080p footage at 30 fps (the pipeline normalises fps to
+# 30 anyway, so only the raster matters). Other resolutions are not modelled, and
+# a guess would be worse than silence, so the prediction is skipped there.
+VGGT_FIT_RESOLUTIONS = {(1920, 1080), (1080, 1920)}
+
+
+def predict_vggt_vram(views: int, total_gib: float | None = None):
+    """(estimated peak, card total, safe limit, shared-memory limit) in GiB."""
+    peak = VGGT_VRAM_INTERCEPT + VGGT_VRAM_PER_VIEW * views
+    if total_gib is None:
+        import torch
+        total_gib = torch.cuda.get_device_properties(0).total_memory / 2**30
+    safe = total_gib * 0.95
+    return peak, total_gib, safe, safe + VGGT_SPILL_CAPACITY
+
+
+def warn_vggt_vram(views: int, width=None, height=None) -> None:
+    """Say so before the camera stage wastes minutes and dies."""
+    if width is not None and height is not None:
+        if (int(width), int(height)) not in VGGT_FIT_RESOLUTIONS:
+            return
+    try:
+        peak, total, safe, limit = predict_vggt_vram(views)
+    except Exception:
+        return
+    if peak <= safe:
+        return
+    if peak <= limit:
+        print(f'[VRAM] 显存很可能溢出：{views} 张图约需 {peak:.1f} GiB，本卡 {total:.1f} GiB。'
+              '使用共享内存时推理速度将大幅降低。', flush=True)
+        print(f'[VRAM] VRAM will likely spill: {views} images need ~{peak:.1f} GiB on a '
+              f'{total:.1f} GiB card; shared-memory inference is much slower.', flush=True)
+    else:
+        print(f'[VRAM] 显存不足：{views} 张图约需 {peak:.1f} GiB，本卡 {total:.1f} GiB。'
+              '运行很可能失败。', flush=True)
+        print(f'[VRAM] Not enough VRAM: {views} images need ~{peak:.1f} GiB on a '
+              f'{total:.1f} GiB card. The run will very likely fail.', flush=True)
+
+
 def configure(c):
     env = {'SKIP_KEYPOINT_PROMPT':'1', 'IMG_SIZE':'512', 'LAYER_DTYPE':'fp32',
            'GPU_HAND_PREP':'1', 'MHR_USE_CUDA_GRAPH':'0', 'POSTPROCESS_SKIP_SMOOTH':'1',
@@ -119,21 +193,32 @@ def stage_prepare(job, cfg):
              start_end=np.array([0, meta.total_frames-1]), observed_range=observed_range)
     n = meta.total_frames
     iv = cfg['vggt_interval']
+    single_camera_frame = False
     if iv == 'auto':
-        iv = max(10, math.ceil((n-1)/(cfg['vggt_max_samples']-1)))
+        target = int(cfg['vggt_max_samples'])
+        if target <= 1:
+            # one camera frame for the whole clip. VGGT then sees a single view,
+            # which is what a static camera with no reference points wants.
+            iv = max(n, 1)
+            single_camera_frame = True
+        else:
+            iv = max(10, math.ceil((n-1)/(target-1)))
     iv = int(iv)
     samples = list(range(0, n, iv))
-    if samples[-1] != n-1:
+    if not single_camera_frame and samples[-1] != n-1:
         samples.append(n-1)
     info = {'frames':n, 'fps':30, 'width':meta.width, 'height':meta.height,
             'observed_track_range_0based':observed_range,
             'bbox_endpoint_holds_outside_observation':True, 'output_covers_all_source_frames':True,
             'vggt_interval':iv, 'vggt_samples':len(samples),
+            'vggt_single_frame':single_camera_frame,
             'effective_frame_limit':frame_limit,
             'peak_alloc_GiB':torch.cuda.max_memory_allocated()/2**30,
             'peak_reserved_GiB':torch.cuda.max_memory_reserved()/2**30}
     save_json(job/'video_info.json', info)
     print('PREPARE_DONE', json.dumps(info), flush=True)
+    if not single_camera_frame:
+        warn_vggt_vram(len(samples), meta.width, meta.height)
 
 def stage_camera(job, cfg):
     import torch
@@ -142,7 +227,8 @@ def stage_camera(job, cfg):
     torch.cuda.reset_peak_memory_stats()
     extract_vggt_camera(str(job/'working_30fps.mp4'), output_npz=str(job/'camera.npz'),
                         frame_range=(0,v['frames']-1), expected_len=v['frames'],
-                        device='cuda',frame_interval=v['vggt_interval'])
+                        device='cuda',frame_interval=v['vggt_interval'],
+                        max_samples=1 if v.get('vggt_single_frame') else None)
     save_json(job/'camera_info.json', {'frames':v['frames'], 'interval':v['vggt_interval'],
              'samples':v['vggt_samples'], 'peak_alloc_GiB':torch.cuda.max_memory_allocated()/2**30,
              'peak_reserved_GiB':torch.cuda.max_memory_reserved()/2**30,
@@ -353,8 +439,8 @@ def checked_settings(path):
     c.setdefault('attention_backend', 'query_batched')
     c.setdefault('attention_query_chunk', 256)
     c.setdefault('sam_hand_mode', 'sample_linear')
-    if c['sam_hand_mode'] not in ('sample_linear', 'mean', 'per_frame'):
-        raise ValueError("sam_hand_mode must be 'sample_linear', 'mean' or 'per_frame'")
+    if c['sam_hand_mode'] not in ('sample_linear', 'per_frame'):
+        raise ValueError("sam_hand_mode must be 'sample_linear' or 'per_frame'")
     if c['attention_backend'] not in ('query_batched', 'original'):
         raise ValueError('attention_backend must be query_batched or original')
     if type(c['attention_query_chunk']) is not int or c['attention_query_chunk'] < 1:
@@ -363,7 +449,7 @@ def checked_settings(path):
         if not isinstance(c[key],int) or c[key]<1:raise ValueError(f'{key} must be a positive integer')
     if c['hamer_smooth_window']<5 or c['hamer_smooth_window']%2==0:
         raise ValueError('hamer_smooth_window must be odd and at least 5')
-    if c['vggt_max_samples']<2:raise ValueError('vggt_max_samples must be >=2')
+    if c['vggt_max_samples']<1:raise ValueError('vggt_max_samples must be >=1')
     if c['vggt_interval']!='auto' and int(c['vggt_interval'])<1:raise ValueError('vggt_interval must be auto or positive')
     if c['flow_cfg_scale']!=1.0:raise ValueError('This 12GiB preset is validated at flow_cfg_scale=1.0')
     return c
@@ -415,7 +501,6 @@ def run_input(source, root, c, fresh):
     begin=time.perf_counter()
     mode = c['sam_hand_mode']
     mode_text = {'sample_linear': f"SAM hands every {c['sam_hand_interval']} frames + linear interpolation",
-                 'mean': f"SAM hands every {c['sam_hand_interval']} frames + whole-clip mean",
                  'per_frame': 'SAM hands every frame'}[mode]
     print(f'Output: {job}\n{mode_text}, HaMeR N={c["hamer_interval"]}, '
           'Fast + SKIP_KEYPOINT_PROMPT=1, postprocess on / ordinary smooth off',flush=True)
@@ -445,7 +530,18 @@ def run_input(source, root, c, fresh):
                     rc=proc.wait()
                 except BaseException:
                     proc.kill();proc.wait();raise
-                if rc:raise RuntimeError(f'{stage} failed (exit {rc}). See {job/stage}.log')
+                if rc:
+                    oom = rc==OOM_EXIT
+                    if not oom:
+                        try:
+                            tail=(job/f'{stage}.log').read_text(encoding='utf-8',errors='replace')[-6000:]
+                            oom='out of memory' in tail.lower() or 'outofmemoryerror' in tail.lower()
+                        except OSError:
+                            pass
+                    if oom:
+                        print(oom_marker(stage,job),flush=True)
+                        raise RuntimeError(f'{stage} 显存不足 / OUT OF VRAM')
+                    raise RuntimeError(f'{stage} failed (exit {rc}). See {job/stage}.log')
             secs=time.perf_counter()-t
             for name in products_for(stage,c):
                 if not (job/name).is_file():raise RuntimeError(f'{stage} output missing: {name}')
@@ -476,7 +572,13 @@ def main():
     a=ap.parse_args()
     if a.worker:
         job=Path(a.job).resolve();c=checked_settings(job/'settings.json');configure(c)
-        HANDLERS[a.worker](job,c)
+        try:
+            HANDLERS[a.worker](job,c)
+        except BaseException as exc:
+            if not is_oom(exc):
+                raise
+            print(f'{type(exc).__name__}: {str(exc).splitlines()[0]}',flush=True)
+            return OOM_EXIT
         return 0
     if not a.videos:ap.error('Drop a video onto the BAT, or pass one or more video paths')
     c=checked_settings(a.settings)

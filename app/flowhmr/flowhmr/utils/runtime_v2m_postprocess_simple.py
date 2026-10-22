@@ -198,10 +198,24 @@ class PostprocessPipeline:
 
     def move_mesh_to_ground(self, output: dict):
         smpl_vertices = _forward_smpl_vertices(self.smpl_mesh, output)
-        mesh_min_y = smpl_vertices[0, ..., 1].min(dim=-1).values.min().item()
-        output['trans'][..., 1] -= mesh_min_y
-        output['local_joints_positions'][..., 0, 1] -= mesh_min_y
-        output['pelvis_world'][..., 1] -= mesh_min_y
+        # Rigid whole-clip vertical alignment.
+        #
+        # This used to take the single lowest vertex of the ENTIRE clip. That is
+        # wrong for footage where another body part briefly becomes the support:
+        # in a windmill the hands reach lower than the feet for a dozen frames,
+        # so one frame defined the floor for the whole clip and every ordinary
+        # standing frame ended up floating ~0.15 m above it. The same happened on
+        # a head spin. Taking the median of the per-frame lowest point instead
+        # anchors to the height the body reaches in a typical frame, which is
+        # where the support actually is, and stays within a few millimetres of
+        # the old behaviour on ordinary clips where the distribution is tight.
+        #
+        # Clips that do have foot contacts are unaffected in the end: the
+        # foot-contact alignment below re-derives the offset absolutely.
+        ground_y = smpl_vertices[0, ..., 1].min(dim=-1).values.median().item()
+        output['trans'][..., 1] -= ground_y
+        output['local_joints_positions'][..., 0, 1] -= ground_y
+        output['pelvis_world'][..., 1] -= ground_y
         return output
 
     def move_mesh_to_ground_by_foot_contact(self, output, foot_contact_intervals):

@@ -16,7 +16,10 @@
    ============================================================ */
 :root{
   --ink:#111111;
-  --red:#D7261E;
+  /* sampled from the Kasane Teto (Synthesizer V) art this palette is derived
+     from: the crimson reads hue ~350 rather than a vermilion orange, and it
+     lifts red-on-paper contrast from 4.54:1 to 5.33:1. */
+  --red:#C8102E;
   --red-ink:#FFFFFF;
   --cement-100:#F4F3F1;
   --cement-200:#E6E4E0;
@@ -24,13 +27,14 @@
   --cement-400:#B4B0AA;
   --cement-600:#6E6A65;
 
-  /* mathematical spacing scale, 8px base unit; density dial 4 (roomy) */
-  --s1:8px; --s2:12px; --s3:16px; --s4:24px; --s6:32px;
+  /* mathematical spacing scale on an 8px base unit.
+     density dial 4 = the Standard band (16-64px), not the dense 8-32px band. */
+  --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s6:48px;
 
-  --control-h:40px;
+  --control-h:44px;
   --chip-h:28px;
-  --strip-h:36px;
-  --log-line:18px;
+  --strip-h:40px;
+  --log-line:20px;
   --hairline:1px solid var(--cement-400);
   --hairline-soft:1px solid var(--cement-300);
 
@@ -84,12 +88,13 @@ ul{list-style:none}
   justify-content:space-between;
   gap:var(--s3);
   padding:32px 0 16px;
-  border-bottom:var(--hairline);
+  border-bottom:1px solid var(--ink);
 }
 .brand{display:flex;align-items:baseline;gap:var(--s3);min-width:0}
 .brand h1{
-  font-size:15px;line-height:1;font-weight:700;
-  letter-spacing:.11em;text-transform:uppercase;
+  font-size:22px;line-height:1;font-weight:700;
+  /* large type needs tight tracking; small caps need wide tracking. */
+  letter-spacing:.01em;text-transform:uppercase;
 }
 .brand-sub{
   font-size:10px;line-height:1;font-weight:500;
@@ -114,8 +119,8 @@ ul{list-style:none}
 /* fixed height: status text changes must never shift the layout */
 .status{
   flex:none;
-  display:flex;align-items:center;gap:var(--s2);
-  height:var(--chip-h);padding:0 10px;
+  display:flex;align-items:center;gap:var(--s1);
+  height:var(--chip-h);padding:0 var(--s2);
   border:var(--hairline);
   font-size:10px;line-height:1;font-weight:600;
   letter-spacing:.15em;text-transform:uppercase;
@@ -189,7 +194,7 @@ ul{list-style:none}
 .runstrip .path{flex:1 1 auto;min-width:180px}
 .wlabel{
   flex:none;
-  font-size:10px;line-height:1;font-weight:600;
+  font-size:11px;line-height:1;font-weight:600;
   letter-spacing:.15em;text-transform:uppercase;
   color:var(--cement-600);
 }
@@ -208,7 +213,7 @@ ul{list-style:none}
 
 /* ================= 5. PROGRESS STRIP ================= */
 .progress{
-  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s6);
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);
   min-height:var(--strip-h);
   padding:var(--s2) 0;
   border-bottom:var(--hairline);
@@ -253,7 +258,7 @@ ul{list-style:none}
   height:var(--control-h);
   padding:0 var(--s3);
   background:var(--cement-200);
-  border:1px solid var(--ink);
+  border:var(--hairline);
   font-size:11px;line-height:1;font-weight:600;
   letter-spacing:.15em;text-transform:uppercase;
   transition:background-color var(--t-fast);
@@ -266,10 +271,10 @@ ul{list-style:none}
   grid-column:3;justify-self:end;
   display:flex;align-items:baseline;gap:var(--s2);
 }
-.panel-summary .glyphs{display:block;grid-column:4;min-width:12px;text-align:right;font-weight:700}
+.panel-summary .glyphs{display:block;grid-column:4;min-width:16px;text-align:right;font-size:15px;font-weight:600}
 
 .panel-body{
-  border:1px solid var(--ink);
+  border:var(--hairline);
   border-top:0;
   background:var(--cement-200);
 }
@@ -311,6 +316,19 @@ ul{list-style:none}
   padding:var(--s2) var(--s3);
   background:var(--cement-100);
 }
+/* While the log is empty, the reserved height is drawn as a ruled ledger so the
+   space reads as structure rather than a framed hole. Geometric only: no text,
+   no extra controls. */
+.log-scroll:has(.log-lines:empty){
+  background-image:repeating-linear-gradient(
+    to bottom,
+    var(--cement-300) 0, var(--cement-300) 1px,
+    transparent 1px, transparent var(--log-line)
+  );
+  background-position:0 var(--s2);
+  background-repeat:repeat;
+  background-size:100% var(--log-line);
+}
 .log-lines{margin:0}
 
 .groups{
@@ -334,8 +352,8 @@ ul{list-style:none}
    Small-caps tracking alone keeps these labels visually subordinate. */
 .group-label{
   grid-column:1 / span 2;
-  padding-top:7px;
-  font-size:10px;line-height:1.2;font-weight:700;
+  padding-top:9px;
+  font-size:11px;line-height:1.2;font-weight:700;
   letter-spacing:.15em;text-transform:uppercase;
   color:var(--ink);
 }
@@ -408,6 +426,9 @@ select.control{
   background-position:right 8px center;
 }
 input[type="number"].control{text-align:right}
+.control:disabled{color:var(--cement-600);background:var(--cement-100);border-color:var(--cement-300);cursor:not-allowed}
+.control:disabled:hover{border-color:var(--cement-300)}
+.row.is-locked .fig{opacity:.5}
 
 /* ================= 8. STRIPS: READOUT + EXPORT ================= */
 .strip{
@@ -420,7 +441,7 @@ input[type="number"].control{text-align:right}
   padding-top:var(--s3);
   border-top:var(--hairline);
 }
-.metric{display:flex;align-items:baseline;gap:var(--s2)}
+.metric{display:flex;align-items:baseline;gap:var(--s2);white-space:nowrap}
 
 .export{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3)}
 .export-caption{
@@ -452,17 +473,11 @@ input[type="number"].control{text-align:right}
 .btn:disabled:hover{background:var(--cement-100);border-color:var(--cement-400);color:var(--cement-600)}
 .btn-primary:disabled{background:var(--cement-100);border-color:var(--cement-400);color:var(--cement-600)}
 
-/* ================= 9. FOOTER ================= */
-/* failures only; hidden while empty: no placeholder text, no empty rule */
-.footer{
-  margin-top:var(--s3);
-  padding-top:var(--s3);
-  border-top:var(--hairline);
-  font-size:11px;line-height:1.4;font-weight:500;
-  letter-spacing:.02em;
-  color:var(--red);
-  overflow-wrap:anywhere;
-}
+/* ================= 9. ERROR BANNER ================= */
+/* same shape as the weights banner; the red edge is the only difference and it
+   is what makes a failure read as a failure at a glance */
+.banner-error .banner-body{padding:12px}
+.banner-error .banner-count{font-weight:500;color:var(--ink)}
 
 /* ================= 9b. OUTPUT STRIP + WATERMARK ================= */
 .strip-output .output-path{
@@ -547,6 +562,16 @@ input[type="number"].control{text-align:right}
       <p class="status" id="status-chip" role="status" aria-live="polite" aria-atomic="true"><span class="mark" aria-hidden="true"></span><span id="status-text">IDLE</span></p>
     </div>
   </header>
+
+  <!-- ========== ERROR BANNER ==========
+       Sits at the very top: a failure must be seen without scrolling, and it
+       is the only thing on the page that uses role="alert". -->
+  <section class="banner banner-error" id="error-banner" role="alert" aria-live="assertive" hidden>
+    <h2 class="banner-title" data-i18n="ERROR">ERROR</h2>
+    <div class="banner-body">
+      <p class="banner-count" id="error-text"></p>
+    </div>
+  </section>
 
   <!-- ========== MISSING MODEL WEIGHTS BANNER ==========
        Hidden (attribute) unless /api/preflight or a status event reports
@@ -636,11 +661,10 @@ input[type="number"].control{text-align:right}
             <li class="row">
               <span class="fig">
                 <label for="p-sam-hand-mode" data-i18n="lbSamHandMode">Hand fill</label>
-                <span class="descr" id="d-sam-hand-mode" data-i18n="dsSamHandMode">抽样帧之间的手部特征如何补齐。sample_linear 线性插值；mean 全片均值；per_frame 每帧都算。</span>
+                <span class="descr" id="d-sam-hand-mode" data-i18n="dsSamHandMode">抽样帧之间的手部特征如何补齐。sample_linear 线性插值；per_frame 每帧都算。</span>
               </span>
               <select class="control" id="p-sam-hand-mode" data-key="sam_hand_mode" aria-describedby="d-sam-hand-mode">
                 <option value="sample_linear" selected>sample_linear</option>
-                <option value="mean">mean</option>
                 <option value="per_frame">per_frame</option>
               </select>
             </li>
@@ -759,16 +783,29 @@ input[type="number"].control{text-align:right}
                 <label for="p-vggt-interval" data-i18n="lbVggtInterval">Camera interval</label>
                 <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔。auto 按目标采样数自动计算。</span>
               </span>
-              <input class="control" type="text" id="p-vggt-interval" data-key="vggt_interval"
-                     value="auto" autocomplete="off" spellcheck="false" inputmode="numeric" aria-describedby="d-vggt-interval">
+              <select class="control" id="p-vggt-interval" data-key="vggt_interval"
+                      aria-describedby="d-vggt-interval">
+                <option value="auto" selected>auto</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6</option>
+                <option value="8">8</option>
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
             </li>
             <li class="row">
               <span class="fig">
                 <label for="p-vggt-max-samples" data-i18n="lbVggtMaxSamples">Camera samples</label>
-                <span class="descr" id="d-vggt-max-samples" data-i18n="dsVggtMaxSamples">整段最多取多少张图估相机。太少会漏掉快速镜头运动。</span>
+                <span class="descr" id="d-vggt-max-samples" data-i18n="dsVggtMaxSamples">用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。</span>
               </span>
               <input class="control" type="number" id="p-vggt-max-samples" data-key="vggt_max_samples"
-                     min="2" max="200" step="1" value="31" aria-describedby="d-vggt-max-samples">
+                     min="1" max="200" step="1" value="31" aria-describedby="d-vggt-max-samples">
             </li>
           </ul>
         </section>
@@ -828,8 +865,6 @@ input[type="number"].control{text-align:right}
       <span class="watermark-by">@JamiePaige</span>
     </figcaption>
   </figure>
-
-  <footer class="footer" id="output-line"></footer>
 </div>
 
 <script>
@@ -848,7 +883,10 @@ input[type="number"].control{text-align:right}
     statusFailed: 'FAILED',
     statusStopped: 'STOPPED',
     statusOffline: 'SERVER OFFLINE',
+  runFailed: 'Run failed:',
+  oomHint: 'Out of GPU memory. Raise "Camera interval" (or lower "Camera samples").',
     bannerTitle: 'MISSING MODEL WEIGHTS',
+    ERROR: 'ERROR',
     bannerCount: '{n} of {m} files absent. Download them, then reload this page. See WEIGHTS_AND_ENV.md.',
     SOURCE: 'SOURCE',
     VIDEO: 'VIDEO',
@@ -897,7 +935,7 @@ input[type="number"].control{text-align:right}
     lbMaxFrames: 'Max frames',
     lbThreads: 'Threads',
     dsHandInterval: 'How many frames between real hand computations. Lower is closer to per-frame and slower.',
-    dsSamHandMode: 'How sampled hand features are filled between observations. sample_linear interpolates; mean uses one whole-clip value; per_frame computes every frame.',
+    dsSamHandMode: 'How sampled hand features are filled between observations. sample_linear interpolates; per_frame computes every frame.',
     dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
     dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
     dsSmoothWindow: 'HaMeR hand smoothing window. Must be odd.',
@@ -908,8 +946,8 @@ input[type="number"].control{text-align:right}
     dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
     dsAttentionBackend: 'Attention execution. query_batched batches queries to save VRAM; original is the stock implementation.',
     dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
-    dsVggtInterval: 'VGGT camera sampling interval. auto derives it from the target sample count.',
-    dsVggtMaxSamples: 'Maximum images used to estimate the camera. Too few misses fast camera motion.',
+    dsVggtInterval: 'VGGT camera sampling interval. auto derives it from the sample count.',
+    dsVggtMaxSamples: 'Images used to estimate the camera (auto interval only). Use a larger count for clips with camera motion.',
     dsMaxFrames: 'Single-pass limit. At 30fps, 3600 frames is about two minutes. Longer input errors out instead of being truncated.',
     dsThreads: 'CPU thread count.'
   };
@@ -921,7 +959,10 @@ input[type="number"].control{text-align:right}
     statusFailed: '失败',
     statusStopped: '已停止',
     statusOffline: '服务器未连接',
+  runFailed: '运行失败：',
+  oomHint: '显存不足，请把「相机间隔」调大（或把「相机采样数」调小）',
     bannerTitle: '缺少模型权重',
+    ERROR: '错误',
     bannerCount: '{m} 个文件中缺少 {n} 个。下载后刷新本页。见 WEIGHTS_AND_ENV.md。',
     SOURCE: '来源',
     VIDEO: '视频',
@@ -970,7 +1011,7 @@ input[type="number"].control{text-align:right}
     lbMaxFrames: '最大帧数',
     lbThreads: '线程数',
     dsHandInterval: '每几帧真实计算一次双手。越小越接近逐帧，越慢。',
-    dsSamHandMode: '抽样帧之间的手部特征如何补齐。sample_linear 线性插值；mean 全片均值；per_frame 每帧都算。',
+    dsSamHandMode: '抽样帧之间的手部特征如何补齐。sample_linear 线性插值；per_frame 每帧都算。',
     dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
     dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
     dsSmoothWindow: 'HaMeR 手部平滑窗口，必须是奇数。',
@@ -982,7 +1023,7 @@ input[type="number"].control{text-align:right}
     dsAttentionBackend: '注意力执行方式。query_batched 分批省显存；original 为原实现。',
     dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
     dsVggtInterval: 'VGGT 相机抽样间隔。auto 按目标采样数自动计算。',
-    dsVggtMaxSamples: '整段最多取多少张图估相机。太少会漏掉快速镜头运动。',
+    dsVggtMaxSamples: '用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。',
     dsMaxFrames: '单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。',
     dsThreads: 'CPU 线程数。'
   };
@@ -1020,9 +1061,14 @@ input[type="number"].control{text-align:right}
   }
 
   /* ================= DOM ================= */
-  var outLine = document.getElementById('output-line');
+  /* last video path the server reported, so a status tick cannot clobber an
+     edit the user just made in the path field */
+  var appliedServerVideo = null;
+
   var outStrip = document.getElementById('output-strip');
   var outPath = document.getElementById('output-path');
+  var errBanner = document.getElementById('error-banner');
+  var errText = document.getElementById('error-text');
 
   var langBtn = document.getElementById('lang-toggle');
   var chip = document.getElementById('status-chip');
@@ -1303,9 +1349,23 @@ input[type="number"].control{text-align:right}
     var out = (lastStatus && typeof lastStatus.output === 'string') ? lastStatus.output : '';
     outPath.textContent = out;
     outStrip.hidden = (out === '');
-    /* the footer line is reserved for failures only */
-    outLine.textContent = runError;
-    outLine.hidden = (runError === '');
+    /* failures go to the top of the page, not the bottom */
+    errText.textContent = runError;
+    errBanner.hidden = (runError === '');
+  }
+
+  /* A dead server rejects fetch() with an opaque browser string such as
+     "Failed to fetch". Say what actually happened instead. */
+  var NET_ERRORS = ['failed to fetch', 'networkerror', 'network error', 'load failed',
+                    'fetch failed', 'err_connection', 'err_name_not_resolved',
+                    'the operation was aborted', 'connection refused'];
+  function errorText(err) {
+    var msg = (err && err.message) ? String(err.message) : '';
+    var low = msg.toLowerCase();
+    for (var i = 0; i < NET_ERRORS.length; i++) {
+      if (low.indexOf(NET_ERRORS[i]) >= 0) { return t('statusOffline'); }
+    }
+    return msg || t('statusOffline');
   }
 
   function serverVideo() {
@@ -1316,20 +1376,38 @@ input[type="number"].control{text-align:right}
     if (!d || typeof d !== 'object') { return; }
     lastStatus = d;
     runGuard = false;
-    runError = '';
-    renderFooter();
+    /* Do NOT clear the error on every tick: status arrives about once a second,
+       so an unconditional clear made every failure message flash for under a
+       second. It clears when a run actually starts, or when the user edits. */
     var prev = state;
     state = (typeof d.state === 'string' && STATUSES[d.state]) ? d.state : 'idle';
+    if (prev !== 'running' && state === 'running') { runError = ''; }
+    if (state === 'failed') {
+      /* the server keeps the last FAILED traceback for anything else; an out of
+         memory run gets one short localized line instead of the raw error */
+      if (typeof d.last_oom === 'string' && d.last_oom) {
+        runError = t('oomHint');
+      } else {
+        var why = (typeof d.last_error === 'string') ? d.last_error : '';
+        if (why) { runError = t('runFailed') + ' ' + why; }
+      }
+    }
+    renderFooter();
     chipText.textContent = t(STATUSES[effectiveState()]);
 
     elapsedBase = (typeof d.elapsed_seconds === 'number' && isFinite(d.elapsed_seconds)) ? d.elapsed_seconds : 0;
     elapsedAt = Date.now();
     renderElapsed();
 
+    /* Only adopt the server's video when it is NEW or the field is still empty.
+       Re-applying it on every status tick used to overwrite the path the user
+       had just picked from the file dialog, one second later. state stays
+       'done' forever after a run, so 'state === done' could never be the test. */
     var sv = serverVideo();
-    if (sv && (videoInput.value.trim() === '' || prev === 'running' || state === 'running' || state === 'done')) {
+    if (sv && sv !== appliedServerVideo && (videoInput.value.trim() === '' || state === 'running')) {
       videoInput.value = sv;
     }
+    appliedServerVideo = sv;
 
     renderStage();
     renderProgress();
@@ -1451,6 +1529,8 @@ input[type="number"].control{text-align:right}
       }
       if (!s) { throw new Error('no settings'); }
       serverOnline = true;
+      /* the server is back: drop the offline notice on its own */
+      if (runError === t('statusOffline')) { runError = ''; renderFooter(); }
       chipText.textContent = t(STATUSES[effectiveState()]);
       syncButtons();
       probeActive = null;
@@ -1508,6 +1588,20 @@ input[type="number"].control{text-align:right}
     if (raw === 'auto') { return 'auto'; }
     var m = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : NaN;
     return (isFinite(m) && m >= 1) ? m : 'auto';
+  }
+  /* the sample count only drives the interval when the interval is auto */
+  function syncCameraSampleState() {
+    var iv = CTRL.vggt_interval;
+    var ms = CTRL.vggt_max_samples;
+    if (!iv || !ms) { return; }
+    var automatic = String(iv.value) === 'auto';
+    ms.disabled = !automatic;
+    ms.setAttribute('aria-disabled', automatic ? 'false' : 'true');
+    var row = ms.parentNode;
+    while (row && row !== document.body && !(row.classList && row.classList.contains('row'))) {
+      row = row.parentNode;
+    }
+    if (row && row.classList) { row.classList.toggle('is-locked', !automatic); }
   }
   function textOf(el, fallback) {
     var v = el ? String(el.value) : '';
@@ -1573,6 +1667,7 @@ input[type="number"].control{text-align:right}
         el.value = v;
       }
     }
+    syncCameraSampleState();
   }
 
   /* ================= actions ================= */
@@ -1591,7 +1686,7 @@ input[type="number"].control{text-align:right}
       /* stay disabled until the next status event clears the guard */
     }, function (err) {
       runGuard = false;
-      setRunError(err && err.message ? err.message : 'run failed');
+      setRunError(errorText(err));
       syncButtons();
     });
   }
@@ -1601,7 +1696,7 @@ input[type="number"].control{text-align:right}
     jsonFetch('/api/stop', { method: 'POST' }).then(function () {
       /* enablement returns with the next status event */
     }, function (err) {
-      setRunError(err && err.message ? err.message : 'stop failed');
+      setRunError(errorText(err));
       syncButtons();
     });
   }
@@ -1621,7 +1716,7 @@ input[type="number"].control{text-align:right}
       syncButtons();
     }, function (err) {
       browseBusy = false;
-      var msg = err && err.message ? err.message : 'browse failed';
+      var msg = errorText(err);
       if (msg !== 'cancelled') { setRunError(msg); }
       syncButtons();
     });
@@ -1629,7 +1724,7 @@ input[type="number"].control{text-align:right}
 
   revealBtn.addEventListener('click', function () {
     jsonFetch('/api/reveal', { method: 'POST' }).then(function () {}, function (err) {
-      setRunError(err && err.message ? err.message : 'reveal failed');
+      setRunError(errorText(err));
     });
   });
 
@@ -1682,16 +1777,15 @@ input[type="number"].control{text-align:right}
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
   });
 
-  /* camera interval: keep the field to "auto" or a positive integer */
+  /* camera interval: a fixed interval makes the sample count irrelevant */
   var camInterval = CTRL.vggt_interval;
   if (camInterval) {
-    camInterval.addEventListener('blur', function () {
+    camInterval.addEventListener('change', function () {
       camInterval.value = String(cameraIntervalValue());
-    });
-    camInterval.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { camInterval.value = String(cameraIntervalValue()); }
+      syncCameraSampleState();
     });
   }
+  syncCameraSampleState();
 
   /* ================= drag & drop upload ================= */
   var dragDepth = 0;
@@ -1742,7 +1836,7 @@ input[type="number"].control{text-align:right}
         setRunError('');
       }
     }, function (err) {
-      setRunError(err && err.message ? err.message : 'upload failed');
+      setRunError(errorText(err));
     });
   });
   /* never let a file dropped outside the strip navigate away from the console */

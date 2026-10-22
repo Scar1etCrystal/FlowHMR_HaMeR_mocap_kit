@@ -18,14 +18,18 @@ Endpoints
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import queue
 import re
+import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import webbrowser
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -169,6 +173,7 @@ RE_HAMER_ROW = re.compile(r'^\s*(\d+)/(\d+)\s')
 RE_GEN_DONE = re.compile(r'^GENERATION_DONE\s+(\d+)')
 RE_DONE = re.compile(r'^DONE:\s*(.+)$')
 RE_FAIL = re.compile(r'^(FAILED:|RuntimeError|ValueError|FileNotFoundError|OSError)')
+RE_OOM = re.compile(r'^\[OOM\]\s*(.*)$')
 RE_TRACE = re.compile(r'^Traceback \(most recent call last\)')
 
 
@@ -184,6 +189,7 @@ class State:
         self.exit_code = None
         self.filtered = 0
         self.last_error = None
+        self.last_oom = None
         self.video = None
         self.output = None
         self.job = None
@@ -204,7 +210,8 @@ class State:
                 'stage_total': len(STAGES), 'progress': dict(self.progress),
                 'elapsed_seconds': round(self.elapsed, 1), 'exit_code': self.exit_code,
                 'filtered_lines': self.filtered, 'gpu': dict(self.gpu),
-                'last_error': self.last_error, 'video': self.video,
+                'last_error': self.last_error, 'last_oom': self.last_oom,
+                'video': self.video,
                 'output': self.output, 'job': self.job, 'log_lines': self.log_lines,
                 'preflight': preflight(),
             }
@@ -220,6 +227,9 @@ class State:
 
 
 ST = State()
+
+# Set once, so the log records the first time a page is actually served.
+_FIRST_PAGE_SERVED = [False]
 
 # Written by main(); used by the watchdog to shut the server down.
 SRV = None
@@ -249,6 +259,7 @@ def watchdog():
         if subscribers == 0 and not running and idle_for > AUTO_STOP_GRACE:
             print(f'\nno page connected for {int(idle_for)}s and no job running'
                   '\nstopping the server (restart with Open_Console.bat)')
+            _record_launch(f'shutdown pid={os.getpid()} reason=idle for {int(idle_for)}s')
             if SRV is not None:
                 threading.Thread(target=SRV.shutdown, daemon=True).start()
             return
@@ -352,6 +363,10 @@ def handle_line(raw: str):
                         # 'info', not 'stage': the stage style uppercases the
                         # text, which would misreport the path's real casing.
                         kind = 'info'
+                    elif RE_OOM.match(line):
+                        with ST.lock:
+                            ST.last_oom = RE_OOM.match(line).group(1).strip()
+                        kind = 'error'
                     elif RE_TRACE.match(line) or RE_FAIL.match(line):
                         with ST.lock:
                             ST.last_error = line[:400]
@@ -427,6 +442,7 @@ def start_run(payload: dict):
         ST.elapsed = 0.0
         ST.exit_code = None
         ST.last_error = None
+        ST.last_oom = None
         ST.video = str(vp)
         ST.output = None
         ST.job = None
@@ -454,36 +470,105 @@ def stop_run():
         if proc is None:
             return False, 'nothing is running'
         ST.state = 'stopped'
+        pid = proc.pid
     try:
-        proc.terminate()
+        if os.name == 'nt':
+            # terminate() only kills the parent. Each stage runs as a child
+            # ("video_to_fbx.py --worker <stage>"), and that grandchild is the
+            # process actually holding the GPU - it would survive and keep the
+            # VRAM allocated. /T kills the whole tree.
+            subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=15)
+        else:
+            proc.terminate()
     except Exception as exc:
         return False, str(exc)
     return True, None
 
 
+_BROWSE_BUSY = threading.Event()
+
+# The dialog must be forced to the front explicitly. The server process is not
+# the foreground process, so Windows' foreground lock would otherwise leave the
+# dialog behind the browser and the user would never see it. Owned windows do
+# NOT inherit TopMost from their owner, so the styles are applied to the dialog
+# handle itself as soon as it exists. The synthetic ALT keystroke is what makes
+# SetForegroundWindow permitted here.
+BROWSE_PS = r'''
+$src = @'
+using System;
+using System.Runtime.InteropServices;
+public class MkDlg {
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after,
+      int x, int y, int cx, int cy, uint flags);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr GetActiveWindow();
+  [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool f);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
+}
+'@
+Add-Type -TypeDefinition $src | Out-Null
+Add-Type -AssemblyName System.Windows.Forms | Out-Null
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = 'Select a video'
+$d.Filter = 'Video files|*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4v;*.mpg;*.mpeg;*.wmv|All files|*.*'
+$d.CheckFileExists = $true
+$d.Multiselect = $false
+# ShowDialog runs a modal message loop, so this timer keeps ticking while the
+# dialog is open. SetWindowPos pins it above the browser; AttachThreadInput is
+# what lets SetForegroundWindow through the foreground lock.
+$t = New-Object System.Windows.Forms.Timer
+$t.Interval = 250
+$t.add_Tick({
+  $h = [MkDlg]::GetActiveWindow()
+  if ($h -eq [IntPtr]::Zero) { return }
+  $top = ([MkDlg]::GetWindowLong($h, -20) -band 0x8) -ne 0
+  $fg = [MkDlg]::GetForegroundWindow() -eq $h
+  if ($top -and $fg) { return }
+  [void][MkDlg]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0003)
+  $fgt = [MkDlg]::GetWindowThreadProcessId([MkDlg]::GetForegroundWindow(), [IntPtr]::Zero)
+  $cur = [MkDlg]::GetCurrentThreadId()
+  if ($fgt -ne 0 -and $fgt -ne $cur) { [void][MkDlg]::AttachThreadInput($cur, $fgt, $true) }
+  [void][MkDlg]::SetForegroundWindow($h)
+  if ($fgt -ne 0 -and $fgt -ne $cur) { [void][MkDlg]::AttachThreadInput($cur, $fgt, $false) }
+})
+$t.Start()
+$r = $d.ShowDialog()
+$t.Stop()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.FileName) }
+'''
+
+
 def browse_for_video():
     """Open a native Windows file dialog and return the chosen path.
 
-    Runs on Windows only; the dialog is modal, so the request that asked for it
-    blocks until the user picks a file or cancels.
+    The dialog is modal, so the request that asked for it blocks until the user
+    picks a file or cancels. Two details matter:
+
+    * It is shown with a hidden TopMost owner. Without an owner the process is
+      not the foreground process, so Windows' foreground lock leaves the dialog
+      behind the browser and the user never sees it.
+    * Only one dialog is ever open. A second request returns an error instead of
+      stacking another invisible dialog on top of the first.
     """
     if os.name != 'nt':
         return None, 'the file picker is only available on Windows'
-    ps = (
-        "Add-Type -AssemblyName System.Windows.Forms | Out-Null;"
-        "$d = New-Object System.Windows.Forms.OpenFileDialog;"
-        "$d.Title = 'Select a video';"
-        "$d.Filter = 'Video files|*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4v;*.mpg;*.mpeg;*.wmv|All files|*.*';"
-        "$d.CheckFileExists = $true;"
-        "$d.Multiselect = $false;"
-        "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
-        "{ [Console]::Out.Write($d.FileName) }"
-    )
+    if _BROWSE_BUSY.is_set():
+        return None, 'a file dialog is already open - check the taskbar'
+    _BROWSE_BUSY.set()
+    ps = BROWSE_PS
     try:
         out = subprocess.run(['powershell.exe', '-NoProfile', '-STA', '-Command', ps],
                              capture_output=True, text=True, timeout=300)
     except Exception as exc:
+        _BROWSE_BUSY.clear()
         return None, f'file picker failed: {exc}'
+    finally:
+        _BROWSE_BUSY.clear()
     path = (out.stdout or '').strip()
     if not path:
         return None, None          # cancelled
@@ -515,7 +600,22 @@ class ConsoleServer(ThreadingHTTPServer):
     every request and the new code silently does nothing. Refuse to share and
     let the caller report a clear error instead.
     """
+    # Exclusive bind. Measured on this machine: with reuse enabled a second
+    # instance binds happily and the OS then delivers requests to whichever
+    # process it likes, so an old console silently keeps serving. TIME_WAIT was
+    # NOT a problem here - binding right after killing a server succeeds.
     allow_reuse_address = False
+
+    def handle_error(self, request, client_address):
+        # A browser that closes a tab aborts the keep-alive connection the
+        # server is parked on. That surfaces as ConnectionAbortedError or
+        # ConnectionResetError from handle_one_request and is completely
+        # normal; without this the server dumps a full traceback per closed
+        # tab. Real errors still go to the default handler.
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -543,6 +643,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         touch_client()
         path = urlparse(self.path).path
+        if path in ('/', '/index.html') and not _FIRST_PAGE_SERVED[0]:
+            _FIRST_PAGE_SERVED[0] = True
+            _record_launch(f'first page served pid={os.getpid()}')
         if path in ('/', '/index.html', '/parameters.html'):
             if not PAGE.is_file():
                 self._json(500, {'ok': False, 'error': f'missing {PAGE.name}'})
@@ -582,6 +685,16 @@ class Handler(BaseHTTPRequestHandler):
         elif path == '/api/stop':
             ok, err = stop_run()
             self._json(200 if ok else 409, {'ok': ok, 'error': err})
+        elif path == '/api/quit':
+            with ST.lock:
+                busy = ST.state == 'running'
+            if busy:
+                self._json(409, {'ok': False, 'error': 'a job is running'})
+            else:
+                self._json(200, {'ok': True})
+                _record_launch(f'shutdown pid={os.getpid()} reason=replaced by a new launch')
+                if SRV is not None:
+                    threading.Thread(target=SRV.shutdown, daemon=True).start()
         elif path == '/api/browse':
             chosen, err = browse_for_video()
             if err:
@@ -675,6 +788,143 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
+def _port_open(port: int, timeout: float = 0.4) -> bool:
+    """True when something accepts a TCP connection on the loopback port.
+
+    Uses a raw socket on purpose: no proxy, no HTTP overhead. On this machine a
+    closed loopback port does not refuse immediately, it times out, so the
+    timeout is kept short.
+    """
+    try:
+        with socket.create_connection(('127.0.0.1', port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _local_get(port: int, path: str, timeout: float = 2.0):
+    """GET over loopback with http.client, which never consults a proxy."""
+    conn = http.client.HTTPConnection('127.0.0.1', port, timeout=timeout)
+    try:
+        conn.request('GET', path)
+        r = conn.getresponse()
+        return r.status, r.read()
+    finally:
+        conn.close()
+
+
+def _survive_ctrl_c() -> None:
+    """A CTRL_C_EVENT can arrive from outside this process - launching a GUI app
+    from the console is enough to send one here, with no key pressed. Ignoring it
+    keeps the server alive; the window can still be closed, and the console still
+    stops itself once the page is gone."""
+    try:
+        def _ignore(signum, frame):
+            print('\n[console] ignored a CTRL_C_EVENT (no key was pressed). '
+                  'Close this window to stop the server.')
+            _record_launch(f'ignored CTRL_C_EVENT pid={os.getpid()}')
+        signal.signal(signal.SIGINT, _ignore)
+        if hasattr(signal, 'SIGBREAK'):
+            signal.signal(signal.SIGBREAK, _ignore)
+    except Exception:
+        pass
+
+
+def _open_url_detached(url: str) -> None:
+    """Open the page without letting the spawned process signal our console.
+
+    webbrowser.open() -> os.startfile() launches the browser inside this console's
+    process group, and the console then received a CTRL_C_EVENT that killed the
+    server the instant the page opened. A new process group has no such handle.
+    """
+    try:
+        flags = 0
+        if os.name == 'nt':
+            flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        subprocess.Popen(['cmd.exe', '/c', 'start', '', url], creationflags=flags,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL, close_fds=True)
+    except Exception:
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+
+
+def _open_browser_when_ready(url: str, timeout: float = 10.0) -> None:
+    """Open the page only once the server actually answers.
+
+    Opening on a fixed 0.7 s timer could show the browser's "cannot reach the
+    server" page if the server was not serving yet (or had already stopped),
+    which looks identical to a failed launch. Poll first, then open.
+    """
+    port = int(url.rstrip('/').rsplit(':', 1)[1])
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if _port_open(port) and _probe_status(port) is not None:
+            _record_launch(f'browser-open pid={os.getpid()} url={url}')
+            _open_url_detached(url)
+            return
+        time.sleep(0.15)
+    _record_launch(f'browser-open SKIPPED pid={os.getpid()}: server never answered')
+
+
+def _probe_status(port: int):
+    """Status dict of a console answering on the port, or None. Proxy-free."""
+    if not _port_open(port):
+        return None
+    try:
+        status, body = _local_get(port, '/api/status')
+        if status != 200:
+            return None
+        return json.loads(body.decode('utf-8'))
+    except Exception:
+        return None
+
+
+def _ask_quit(base: str) -> bool:
+    try:
+        req = urllib.request.Request(base + 'api/quit', data=b'', method='POST')
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def take_over_port(port: int, args) -> int | None:
+    """Resolve an already-running console. Returns an exit code to stop with,
+    or None when the caller may bind the port itself.
+
+    Only called after a bind attempt failed, so a probe here costs nothing in
+    the normal case.
+    """
+    base = f'http://127.0.0.1:{port}/'
+    st = _probe_status(port)
+    if st is None:
+        return None
+    state = st.get('state')
+    if state == 'running':
+        print(f'a console is already RUNNING A JOB at {base}')
+        print('opening it instead; nothing new was started.')
+        _record_launch('handoff-running')
+        if '--no-browser' not in args:
+            _open_url_detached(base)
+        return 0
+    # Idle. It may be sitting in its 25 s auto-stop countdown, so handing off
+    # would hand over to a server that is about to die. Replace it instead.
+    print(f'an idle console is still holding {base}')
+    print('replacing it with a fresh one...')
+    _record_launch('replace-idle')
+    _ask_quit(base)
+    deadline = time.time() + 10.0
+    while time.time() < deadline:
+        if _probe_status(port) is None:
+            return None
+        time.sleep(0.2)
+    print('the old console did not let go of the port in time.')
+    return 1
+
+
 def main():
     port = 8760
     args = sys.argv[1:]
@@ -683,17 +933,29 @@ def main():
     url = f'http://127.0.0.1:{port}/'
     threading.Thread(target=gpu_loop, daemon=True).start()
     threading.Thread(target=elapsed_loop, daemon=True).start()
+    # Bind first: in the normal case there is nothing to take over, and probing
+    # first made every launch wait on a loopback timeout with an empty window.
+    srv = None
     try:
         srv = ConsoleServer(('127.0.0.1', port), Handler)
-    except OSError as exc:
-        print(f'cannot listen on 127.0.0.1:{port}: {exc}')
-        print('Another console is probably already running. Close it, or pass --port <n>.')
-        return 1
+    except OSError as first_exc:
+        decision = take_over_port(port, args)
+        if decision is not None:
+            return decision
+        try:
+            srv = ConsoleServer(('127.0.0.1', port), Handler)
+        except OSError as exc:
+            _record_launch(f'bind-failed {exc}')
+            print(f'cannot listen on 127.0.0.1:{port}: {exc}')
+            print('Another program is using that port. Close it, or pass --port <n>.')
+            return 1
     global SRV, AUTO_STOP_GRACE
     SRV = srv
+    _record_launch(f'bind ok pid={os.getpid()} port={port}')
     if '--stay' in args:
         AUTO_STOP_GRACE = 0.0
     threading.Thread(target=watchdog, daemon=True).start()
+    _survive_ctrl_c()
     print(f'mocap kit console: {url}')
     print(f'  page      {PAGE}')
     print(f'  settings  {SETTINGS}')
@@ -702,15 +964,52 @@ def main():
         print(f'  stops by itself {int(AUTO_STOP_GRACE)}s after the last page closes'
               ' (a running job keeps it alive)')
     if '--no-browser' not in args:
-        threading.Timer(0.7, lambda: webbrowser.open(url)).start()
+        threading.Thread(target=_open_browser_when_ready, args=(url,), daemon=True).start()
+    else:
+        _record_launch(f'serving pid={os.getpid()} (no browser asked)')
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         print('\nserver stopped')
+        _record_launch(f'shutdown pid={os.getpid()} reason=ctrl-c')
     finally:
         srv.server_close()
     return 0
 
 
+def _record_launch(tag: str) -> None:
+    """Append one line per launch so a failed double-click leaves evidence."""
+    try:
+        log = PACK / 'logs' / 'console_server_last.log'
+        log.parent.mkdir(parents=True, exist_ok=True)
+        with open(log, 'a', encoding='utf-8') as fh:
+            fh.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")}  {tag}  argv={sys.argv[1:]}\n')
+    except Exception:
+        pass
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    _record_launch('launch')
+    try:
+        code = main()
+    except KeyboardInterrupt:
+        # A CTRL_C_EVENT can arrive from outside this process - it does not have
+        # to be a keypress. Treat it as a normal stop, not a crash.
+        _record_launch('interrupted by CTRL_C_EVENT (not necessarily a keypress)')
+        print('\ninterrupted (CTRL_C_EVENT received). The console was not started.')
+        sys.exit(130)
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        try:
+            log = PACK / 'logs' / 'console_server_last.log'
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with open(log, 'a', encoding='utf-8') as fh:
+                fh.write(f'{time.strftime("%Y-%m-%d %H:%M:%S")}  FAILED\n')
+                fh.write(traceback.format_exc() + '\n')
+        except Exception:
+            pass
+        raise
+    _record_launch(f'exit {code}')
+    sys.exit(code)

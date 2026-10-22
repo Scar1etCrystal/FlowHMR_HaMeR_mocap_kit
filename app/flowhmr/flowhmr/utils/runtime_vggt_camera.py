@@ -59,7 +59,7 @@ def _interpolate_camera_sequence(
 
     sample_x = np.asarray(sample_indices, dtype=np.float64)
     target_x = np.arange(target_len, dtype=np.float64)
-    if sample_x[0] != 0 or sample_x[-1] != target_len - 1:
+    if len(sample_indices) > 1 and (sample_x[0] != 0 or sample_x[-1] != target_len - 1):
         raise ValueError(
             f"sample_indices must include first/last frame, got {sample_indices[:3]}...{sample_indices[-3:]}, "
             f"target_len={target_len}"
@@ -122,6 +122,7 @@ def _save_video_frames(
     frame_range: Optional[Tuple[int, int]] = None,
     max_frames: Optional[int] = None,
     frame_interval: int = 1,
+    max_samples: Optional[int] = None,
 ) -> tuple[list[str], tuple[int, int], list[int]]:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -145,6 +146,8 @@ def _save_video_frames(
             if end is not None and frame_idx > end:
                 break
             if max_frames is not None and max_frames > 0 and len(paths) >= max_frames:
+                break
+            if max_samples is not None and max_samples > 0 and len(paths) >= max_samples:
                 break
             ok, frame = cap.read()
             if not ok:
@@ -203,6 +206,7 @@ def extract_vggt_camera(
     preprocess_mode: str = "max_size",
     keep_frames: bool = False,
     frame_interval: int = 1,
+    max_samples: Optional[int] = None,
 ) -> VGGTCameraResult:
     frame_interval = max(1, int(frame_interval))
     if output_npz and osp.exists(output_npz):
@@ -215,8 +219,10 @@ def extract_vggt_camera(
         image_size_hw = (int(image_size_arr[0]), int(image_size_arr[1]))
         cached_interval = int(data["camera_sampling_interval"]) if "camera_sampling_interval" in data.files else 1
         valid_interval = cached_interval == frame_interval
+        cached_max = int(data["camera_max_samples"]) if "camera_max_samples" in data.files else -1
+        valid_samples = cached_max == (-1 if max_samples is None else int(max_samples))
         valid_len = expected_len is None or camera_RT.shape[0] == int(expected_len)
-        if k_space == "original_frame" and valid_len and valid_interval:
+        if k_space == "original_frame" and valid_len and valid_interval and valid_samples:
             print(f"  [vggt] skip cached camera: {output_npz}")
             return VGGTCameraResult(
                 camera_RT=camera_RT,
@@ -255,10 +261,11 @@ def extract_vggt_camera(
             frame_range=frame_range,
             max_frames=expected_len,
             frame_interval=frame_interval,
+            max_samples=max_samples,
         )
         if expected_len is not None:
             target_len = int(expected_len)
-            if sample_indices[-1] != target_len - 1:
+            if max_samples is None and sample_indices[-1] != target_len - 1:
                 raise ValueError(
                     f"VGGT-Omega sampled frames do not cover the final frame: last_sample={sample_indices[-1]}, "
                     f"expected_last={target_len - 1}, video={video_path}, frame_range={frame_range}"
@@ -330,6 +337,8 @@ def extract_vggt_camera(
                 k_space="original_frame",
                 camera_sampling_interval=frame_interval,
                 camera_sample_indices=np.array(sample_indices, dtype=np.int64),
+                camera_max_samples=np.array(-1 if max_samples is None else int(max_samples),
+                                            dtype=np.int64),
             )
             print(
                 f"  [vggt] camera saved → {output_npz}  "

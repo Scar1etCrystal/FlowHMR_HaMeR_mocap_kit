@@ -15,7 +15,7 @@ set "LAYER_DTYPE=fp32"
 set "GPU_HAND_PREP=1"
 set "MHR_USE_CUDA_GRAPH=0"
 rem Stage residency: park other models BEFORE VGGT; defer SAM; restore generation later.
-rem See logs\MEMORY_AUDIT_REPORT.md for measured 12GiB frame/sample budgets.
+rem Budgets below are tuned for a 12GiB card; re-measure before raising them.
 set "FLOWHMR_UNLOAD_BETWEEN_STAGES=1"
 rem Skip ONLY FlowHMR's ordinary 3-frame filter; other temporal constraints remain.
 set "POSTPROCESS_SKIP_SMOOTH=1"
