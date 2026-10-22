@@ -1,41 +1,51 @@
-# 给 AI agent 的部署说明（Blackwell / sm_120，同时覆盖 20–50 系）
+# 给 AI agent 的部署说明（cu121 / cu128 两种构建，覆盖 20–50 系）
 
 > 这份文件是给**代码 agent** 看的操作说明，不是给人读的介绍文档。
 > 所有路径都相对本文件所在目录（包根）。请按顺序执行，不要跳过第 6 节的验证。
 
 ## 0. 结论先行
 
-**本包自带的 `envs\` 已经是 cu128 版本，sm_120（50 系）可以直接跑，不需要替换任何东西。**
-`torch 2.11.0+cu128` / `torchvision 0.26.0+cu128`，
-`torch.cuda.get_arch_list()` = `['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120']`，
-20 / 30 / 40 / 50 系都覆盖。直接跳到第 5 节跑起来，第 6 节做验证。
+**先确认本包是哪种 torch 构建，两种都能用，只是覆盖面不同：**
+
+```bat
+envs\python.exe -c "import torch;print(torch.__version__, torch.cuda.get_arch_list())"
+```
+
+- `2.5.1+cu121`（**cu121 构建**）：20 / 30 / 40 系直接可用，且在 Ampere 上比 cu128
+  快约 19%（151 帧全链 260 s vs 314.7 s）。**不支持 50 系（sm_120）**，
+  遇到 50 系机器按第 2 节换成 cu128。
+- `2.11.0+cu128`（**cu128 构建**）：20 / 30 / 40 / 50 系全部覆盖，不需要再换。
+
+确认完直接跳到第 5 节跑起来，第 6 节做验证。
 
 ## 1. 已确认的事实（不要重复验证）
 
-- 自带环境：Python 3.11.4、**torch 2.11.0+cu128**、**torchvision 0.26.0+cu128**、cuDNN 9.19
-- 实测 `torch.cuda.get_arch_list()` =
-  `['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120']` → 含 `sm_120`，50 系原生支持
-- 40 系是 sm_89，列表里没有，会走同大版本 sm_86 的 cubin
+- 自带环境：Python 3.11.4，torch 是 cu121 或 cu128 构建之一（见第 0 节自检）
+- cu121 构建：`torch 2.5.1+cu121` / `torchvision 0.20.1+cu121`，cuDNN 9.1，
+  arch list `['sm_50','sm_60','sm_61','sm_70','sm_75','sm_80','sm_86','sm_90']`（**无** sm_120）
+- cu128 构建：`torch 2.11.0+cu128` / `torchvision 0.26.0+cu128`，cuDNN 9.19，
+  arch list `['sm_75','sm_80','sm_86','sm_90','sm_100','sm_120']`（**含** sm_120）
+- 40 系是 sm_89，两种构建都没有，会走同大版本 sm_86 的 cubin
   （NVIDIA 保证同大版本内次版本向上二进制兼容）
-- 这套 cu128 环境已在 RTX 3060（sm_86）上**完整跑通全链**：
-  151 帧 314.7 秒、FBX 重导入通过、stderr 全程为空
+- 两种构建都在 RTX 3060（sm_86）上完整跑通过全链，FBX 重导入结果一致
 - 包内 `envs\` 自带 pip（26.1.1），用它装包，不要用系统 Python
 
-## 2. 自检（不需要替换 torch）
+## 2. 需要 cu128 时（50 系 / sm_120）
 
-```bat
-envs\python.exe -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"
-:: 期望：2.11.0+cu128 / 12.8 / 列表里出现 'sm_120'
-```
-
-只有当第 6 节的验证不通过、或你想升级 torch 时，才需要重新安装：
+只有第 0 节自检发现 arch list 里**没有 `sm_120`** 时才需要做这一步。
 
 ```bat
 envs\python.exe -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
 ```
 
 - 必须 torch >= 2.7 且来自 cu128 索引；torchvision 会被索引自动配成对应版本
-- 本包已验证的组合是 `torch 2.11.0+cu128` + `torchvision 0.26.0+cu128`
+- 已验证的组合是 `torch 2.11.0+cu128` + `torchvision 0.26.0+cu128`
+- 装完立刻自检：
+
+```bat
+envs\python.exe -c "import torch;print(torch.__version__, torch.version.cuda, torch.cuda.get_arch_list())"
+:: 期望：2.11.0+cu128 / 12.8 / 列表里出现 'sm_120'
+```
 
 **同一份 cu128 也覆盖 20/30/40 系，不需要为不同卡分别打包。** 实测
 `torch 2.11.0+cu128` 的 `torch.cuda.get_arch_list()` 为
@@ -51,9 +61,9 @@ envs\python.exe -m pip install --index-url https://download.pytorch.org/whl/cu12
 
 ## 3. 换 torch 之后必须重建的编译扩展
 
-**当前这套环境已经换过 torch 并验证过全链，一键流程用到的路径不需要重编。**
-下面这些是**本机编译**的 `.pyd`，链接了 torch 的 C++ ABI。只有在你自己再次更换
-torch 版本、或者要跑依赖它们的训练路径时，才需要处理，否则 import 会抛 undefined symbol。
+**一键流程用到的路径不需要重编**，两种构建都验证过。下面这些是**本机编译**的 `.pyd`，
+链接了 torch 的 C++ ABI。只有在你自己再次更换 torch 版本、或者要跑依赖它们的训练路径时，
+才需要处理，否则 import 会抛 undefined symbol。
 
 | 文件 | 处理 |
 |---|---|
@@ -123,7 +133,7 @@ GET http://127.0.0.1:8760/api/preflight
 
 换 torch 后数值可能变化，不要假设一致。用固定素材跑完整流程，和下列基线对比：
 
-| 项目 | cu121 旧栈（RTX 3060） | 本包 cu128 栈实测（RTX 3060） |
+| 项目 | cu121 构建（RTX 3060） | cu128 构建实测（RTX 3060） |
 |---|---|---|
 | 151 帧全链 | 约 260 秒 | **314.7 秒** |
 | 565 帧全链 | 约 530 秒 | 未复测 |
@@ -158,7 +168,7 @@ Open_Console.bat        网页控制台（127.0.0.1:8760）
 pipeline_settings.json  全部默认参数
 settings.bat            路径与环境变量（%PY% / %PACK_ROOT%）
 weights_manifest.json   权重清单 + SHA-256
-envs\                   自带 Python 3.11.4 + 依赖（已含 torch 2.11.0+cu128）
+envs\                   自带 Python 3.11.4 + 依赖（torch 视构建而定，见第 0 节）
 app\                    FlowHMR / HaMeR / SAM-3D-Body 等代码与权重
 third-party\            detectron2 / mmcv / ViTPose 源码（可编辑安装目标）
 tools\                  流水线脚本（video_to_fbx.py、console_server.py 等）
