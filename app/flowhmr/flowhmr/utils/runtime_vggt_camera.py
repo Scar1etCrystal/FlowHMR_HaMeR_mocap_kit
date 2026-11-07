@@ -14,6 +14,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple
+from zipfile import BadZipFile
 
 import cv2
 import numpy as np
@@ -39,6 +40,43 @@ class VGGTCameraResult:
 _VGGT_MODEL_CACHE: dict[tuple[str, str], Any] = {}
 
 
+def make_static_camera(image_size_hw, *, frame_range, output_npz=None) -> VGGTCameraResult:
+    """Use a fixed camera and SAM's default intrinsics without loading VGGT."""
+    from flowhmr.utils.runtime_video_processing import VideoProcessor
+
+    height, width = map(int, image_size_hw)
+    start, end = map(int, frame_range)
+    if min(height, width) <= 0 or start < 0 or end < start:
+        raise ValueError(f"Invalid static camera dimensions/range: {image_size_hw}, {frame_range}")
+    length = end - start + 1
+    camera_rt = np.repeat(np.eye(4, dtype=np.float32)[None], length, axis=0)
+    K = np.repeat(VideoProcessor.default_K_from_hw(height, width)[None], length, axis=0)
+    result = VGGTCameraResult(camera_rt, camera_rt, K, (height, width))
+    if output_npz is not None:
+        valid_cache = False
+        if osp.isfile(output_npz):
+            try:
+                with open(output_npz, "rb") as cache_file, np.load(cache_file, allow_pickle=False) as data:
+                    valid_cache = (
+                        str(data["camera_mode"]) == "static"
+                        and str(data["k_space"]) == "original_frame"
+                        and np.array_equal(data["frame_range"], [start, end])
+                        and np.array_equal(data["image_size_hw"], [height, width])
+                        and np.array_equal(data["camera_RT"], camera_rt)
+                        and np.array_equal(data["K"], K)
+                    )
+            except (KeyError, ValueError, OSError, BadZipFile):
+                pass
+        if not valid_cache:
+            os.makedirs(osp.dirname(osp.abspath(output_npz)), exist_ok=True)
+            np.savez(output_npz, camera_mode="static", camera_world="opencv_static",
+                     camera_RT=camera_rt, RT=camera_rt, K=K,
+                     image_size_hw=np.array([height, width], dtype=np.int64),
+                     frame_range=np.array([start, end], dtype=np.int64),
+                     k_space="original_frame", k_source="image_diagonal")
+    return result
+
+
 def _interpolate_camera_sequence(
     extrinsic: torch.Tensor,
     intrinsic: torch.Tensor,
@@ -59,7 +97,7 @@ def _interpolate_camera_sequence(
 
     sample_x = np.asarray(sample_indices, dtype=np.float64)
     target_x = np.arange(target_len, dtype=np.float64)
-    if len(sample_indices) > 1 and (sample_x[0] != 0 or sample_x[-1] != target_len - 1):
+    if sample_x[0] != 0 or sample_x[-1] != target_len - 1:
         raise ValueError(
             f"sample_indices must include first/last frame, got {sample_indices[:3]}...{sample_indices[-3:]}, "
             f"target_len={target_len}"
@@ -122,7 +160,6 @@ def _save_video_frames(
     frame_range: Optional[Tuple[int, int]] = None,
     max_frames: Optional[int] = None,
     frame_interval: int = 1,
-    max_samples: Optional[int] = None,
 ) -> tuple[list[str], tuple[int, int], list[int]]:
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
@@ -147,8 +184,6 @@ def _save_video_frames(
                 break
             if max_frames is not None and max_frames > 0 and len(paths) >= max_frames:
                 break
-            if max_samples is not None and max_samples > 0 and len(paths) >= max_samples:
-                break
             ok, frame = cap.read()
             if not ok:
                 break
@@ -159,11 +194,7 @@ def _save_video_frames(
             should_save = (rel_idx % frame_interval == 0) or (end is not None and frame_idx == end)
             if should_save:
                 out_path = osp.join(frame_dir, f"{len(paths):06d}.jpg")
-                # cv2.imwrite silently fails for Unicode paths on Windows.
-                ok, encoded = cv2.imencode(".jpg", frame)
-                if not ok:
-                    raise RuntimeError(f"JPEG encoding failed for {out_path}")
-                encoded.tofile(out_path)
+                cv2.imwrite(out_path, frame)
                 paths.append(out_path)
                 sample_indices.append(rel_idx)
             frame_idx += 1
@@ -174,25 +205,6 @@ def _save_video_frames(
         raise ValueError(f"VGGT-Omega read no frames from video: {video_path}, frame_range={frame_range}")
     return paths, image_size_hw, sample_indices
 
-
-
-def release_vggt_model() -> None:
-    """释放模块级 VGGT 缓存（上游从不释放，~4.4 GB 会一直占着显存）。
-
-    相机阶段结束后调用即可：后续 extract_vggt_camera() 会命中
-    *_vggt_camera.npz 缓存直接 early-return，不再需要模型。
-    """
-    import gc
-
-    n = len(_VGGT_MODEL_CACHE)
-    _VGGT_MODEL_CACHE.clear()
-    gc.collect()
-    try:
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-    except Exception:
-        pass
-    print(f"  [vram] released VGGT model cache ({n} entr{'y' if n == 1 else 'ies'})")
 
 def extract_vggt_camera(
     video_path: str,
@@ -206,7 +218,6 @@ def extract_vggt_camera(
     preprocess_mode: str = "max_size",
     keep_frames: bool = False,
     frame_interval: int = 1,
-    max_samples: Optional[int] = None,
 ) -> VGGTCameraResult:
     frame_interval = max(1, int(frame_interval))
     if output_npz and osp.exists(output_npz):
@@ -219,10 +230,12 @@ def extract_vggt_camera(
         image_size_hw = (int(image_size_arr[0]), int(image_size_arr[1]))
         cached_interval = int(data["camera_sampling_interval"]) if "camera_sampling_interval" in data.files else 1
         valid_interval = cached_interval == frame_interval
-        cached_max = int(data["camera_max_samples"]) if "camera_max_samples" in data.files else -1
-        valid_samples = cached_max == (-1 if max_samples is None else int(max_samples))
         valid_len = expected_len is None or camera_RT.shape[0] == int(expected_len)
-        if k_space == "original_frame" and valid_len and valid_interval and valid_samples:
+        valid_range = frame_range is None or (
+            "frame_range" in data.files and np.array_equal(data["frame_range"], frame_range)
+        )
+        valid_k = data["K"].shape == (camera_RT.shape[0], 3, 3)
+        if k_space == "original_frame" and valid_len and valid_interval and valid_range and valid_k:
             print(f"  [vggt] skip cached camera: {output_npz}")
             return VGGTCameraResult(
                 camera_RT=camera_RT,
@@ -234,6 +247,10 @@ def extract_vggt_camera(
             print(f"  [vggt] cached camera K is not original-frame space ({k_space!r}), recomputing")
         elif not valid_interval:
             print(f"  [vggt] cached camera interval mismatch: {cached_interval} != {frame_interval}, recomputing")
+        elif not valid_range:
+            print("  [vggt] cached frame range mismatch, recomputing")
+        elif not valid_k:
+            print("  [vggt] cached camera intrinsics length mismatch, recomputing")
         else:
             print(f"  [vggt] cached camera length mismatch: {camera_RT.shape[0]} != {expected_len}, recomputing")
 
@@ -261,11 +278,10 @@ def extract_vggt_camera(
             frame_range=frame_range,
             max_frames=expected_len,
             frame_interval=frame_interval,
-            max_samples=max_samples,
         )
         if expected_len is not None:
             target_len = int(expected_len)
-            if max_samples is None and sample_indices[-1] != target_len - 1:
+            if sample_indices[-1] != target_len - 1:
                 raise ValueError(
                     f"VGGT-Omega sampled frames do not cover the final frame: last_sample={sample_indices[-1]}, "
                     f"expected_last={target_len - 1}, video={video_path}, frame_range={frame_range}"
@@ -337,11 +353,9 @@ def extract_vggt_camera(
                 k_space="original_frame",
                 camera_sampling_interval=frame_interval,
                 camera_sample_indices=np.array(sample_indices, dtype=np.int64),
-                camera_max_samples=np.array(-1 if max_samples is None else int(max_samples),
-                                            dtype=np.int64),
             )
             print(
-                f"  [vggt] camera saved → {output_npz}  "
+                f"  [vggt] camera saved -> {output_npz}  "
                 f"(T={T}, sampled={len(sample_indices)}, interval={frame_interval}, image_size={result.image_size_hw})"
             )
 

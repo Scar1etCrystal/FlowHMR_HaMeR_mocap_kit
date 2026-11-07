@@ -212,7 +212,9 @@ class VideoProcessor:
             if duration is not None:
                 cmd += ["-t", str(duration)]
             if force_fps and encoder_name:
-                cmd += ["-vf", f"fps={int(force_fps)}", "-c:v", encoder_name, "-vsync", "1", "-pix_fmt", "yuv420p"]
+                # FFmpeg 9 removed -vsync; -fps_mode cfr expresses the same constant
+                # frame-rate behavior for filtered output.
+                cmd += ["-vf", f"fps={int(force_fps)}", "-c:v", encoder_name, "-fps_mode", "cfr", "-pix_fmt", "yuv420p"]
                 if "libx264" in encoder_name or "libx265" in encoder_name:
                     cmd += ["-preset", "fast", "-crf", "22"]
                 elif "nvenc" in encoder_name:
@@ -226,6 +228,10 @@ class VideoProcessor:
 
         if force_fps:
             candidate_encoders: List[Optional[str]] = ["libx264", "h264_nvenc", "mpeg4", "libx265"]
+            preferred = os.environ.get("FLOWHMR_VIDEO_ENCODER", "").strip()
+            if preferred in ("libx264", "h264_nvenc", "mpeg4", "libx265"):
+                candidate_encoders.remove(preferred)
+                candidate_encoders.insert(0, preferred)
         else:
             candidate_encoders = [None]
 
@@ -233,7 +239,8 @@ class VideoProcessor:
         for enc in candidate_encoders:
             cmd = build_cmd(enc)
             try:
-                subprocess.run(cmd, check=True, capture_output=True, text=True)
+                subprocess.run(cmd, check=True, capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
                 os.replace(tmp_path, backup_path)
                 print(f">>> video transcoding done (encoder: {enc if enc else 'copy'}): {backup_path}")
                 return backup_path
@@ -335,73 +342,10 @@ class VideoProcessor:
 
     # Post-processing (all static)
     @staticmethod
-    def merge_person_tracks(result: "TrackingResult", min_len: int = 30,
-                            gap: int = 45, area_ratio_max: float = 1.6):
-        """TRACKFIX: 合并同一人的分段轨迹。
-
-        ByteTrack 在人物短暂丢失后会分配新 track_id, 同一人被切成多条轨迹;
-        select_best_track 只取最长的一条会丢失其余片段。
-        判据: (a) 帧范围重叠或相距在 gap 内; (b) 平均面积比值 <= area_ratio_max
-              (面积差异大的多半是误检, 例如实测 id=2 面积仅真人的一半)。
-        """
-        if not result.tracks:
-            return None
-        cands = [t for t in result.tracks if t.length >= min_len] or list(result.tracks)
-        if not cands:
-            return None
-        cands = sorted(cands, key=lambda t: (-t.length, t.track_id))
-
-        seed = cands[0]
-        lo, hi = int(seed.frames.min()), int(seed.frames.max())
-        frames = list(seed.frames.tolist())
-        boxes = list(seed.bboxes.tolist())
-        area0 = float(seed.avg_area)
-
-        # 反复吸收与当前区间相邻/重叠且面积接近的轨迹
-        progress = True
-        while progress:
-            progress = False
-            for t in cands:
-                if t.track_id == seed.track_id:
-                    continue
-                t_lo, t_hi = int(t.frames.min()), int(t.frames.max())
-                if t_hi < lo - gap or t_lo > hi + gap:
-                    continue
-                ratio = max(float(t.avg_area), area0) / max(min(float(t.avg_area), area0), 1e-6)
-                if ratio > area_ratio_max:
-                    continue
-                frames.extend(t.frames.tolist())
-                boxes.extend(t.bboxes.tolist())
-                lo = min(lo, t_lo)
-                hi = max(hi, t_hi)
-                progress = True
-            cands = [t for t in cands if t.track_id == seed.track_id or
-                     int(t.frames.max()) < lo - gap or int(t.frames.min()) > hi + gap]
-
-        # 同一帧可能被多条轨迹覆盖 -> 去重(保留后出现的)
-        frame_to_box = {}
-        for f, b in zip(frames, boxes):
-            frame_to_box[int(f)] = b
-        fr = np.asarray(sorted(frame_to_box.keys()), dtype=np.int64)
-        bx = np.asarray([frame_to_box[int(f)] for f in fr], dtype=np.float32)
-        areas = (bx[:, 2] - bx[:, 0]) * (bx[:, 3] - bx[:, 1])
-        return TrackInfo(track_id=seed.track_id, frames=fr, bboxes=bx,
-                         length=int(fr.size), avg_area=float(np.mean(areas)))
-
-    @staticmethod
     def select_best_track(result: TrackingResult) -> int:
         """Select best track index by (length, avg_area) descending. Returns -1 if no tracks."""
         if not result.tracks:
             return -1
-        merged = VideoProcessor.merge_person_tracks(result)  # TRACKFIX: 合并分段轨迹
-        if merged is not None:
-            for i, t in enumerate(result.tracks):
-                if t.track_id == merged.track_id:
-                    result.tracks[i] = merged
-                    print(f">>> TRACKFIX merged: track {merged.track_id} -> "
-                          f"{merged.length} frames, [{int(merged.frames.min())},{int(merged.frames.max())}], "
-                          f"avg_area={merged.avg_area:.0f}")
-                    return i
         scored = [(i, t.length, t.avg_area) for i, t in enumerate(result.tracks)]
         scored.sort(key=lambda x: (x[1], x[2]), reverse=True)
         return scored[0][0]
