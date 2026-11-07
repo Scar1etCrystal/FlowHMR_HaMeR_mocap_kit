@@ -646,6 +646,25 @@ input[type="number"].control{text-align:right}
     <div class="panel-body" id="panel-body" hidden>
       <div class="groups settings">
 
+        <!-- ---------- GROUP 0: PRESET ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpPreset">PRESET</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-preset" data-i18n="lbPreset">VRAM preset</label>
+                <span class="descr" id="d-preset" data-i18n="dsPreset">按显卡显存一键套用一组参数，套用后仍可手动微调。</span>
+              </span>
+              <select class="control" id="p-preset" aria-describedby="d-preset">
+                <option value="default" selected data-i18n="optDefault">default</option>
+                <option value="8g">8 GB</option>
+                <option value="10g">10 GB</option>
+                <option value="12g">12 GB</option>
+              </select>
+            </li>
+          </ul>
+        </section>
+
         <!-- ---------- GROUP 1: HAND ---------- -->
         <section class="group">
           <h3 class="group-label" data-i18n="grpHand">HAND</h3>
@@ -913,6 +932,10 @@ input[type="number"].control{text-align:right}
     grpHamer: 'HAMER',
     grpGeneration: 'GENERATION',
     grpAttention: 'ATTENTION',
+    grpPreset: 'PRESET',
+    lbPreset: 'VRAM preset',
+    dsPreset: 'Apply a parameter set for your card in one step; every value stays editable.',
+    optDefault: 'default',
     grpCamera: 'CAMERA',
     grpLimits: 'LIMITS',
     lbHandInterval: 'Hand interval',
@@ -1000,6 +1023,10 @@ input[type="number"].control{text-align:right}
     grpHamer: 'HaMeR',
     grpGeneration: '生成',
     grpAttention: '注意力',
+    grpPreset: '预设',
+    lbPreset: '显存档位',
+    dsPreset: '按显卡显存一键套用一组参数，套用后仍可手动微调。',
+    optDefault: '默认',
     grpCamera: '相机',
     grpLimits: '限制',
     lbHandInterval: '手部间隔',
@@ -1843,6 +1870,34 @@ input[type="number"].control{text-align:right}
     CTRL.vggt_custom.addEventListener('change', syncCameraState);
   }
   syncCameraState();
+
+  /* ================= VRAM presets ================= */
+  /* the SAM batch is the memory knob; the attention chunk is only used as a
+     secondary safety margin on the long-clip generation stage */
+  var PRESETS = {
+    'default': { sam_chunk_size: 16, attention_query_chunk: 256 },
+    '8g':      { sam_chunk_size: 10, attention_query_chunk: 128 },
+    '10g':     { sam_chunk_size: 24, attention_query_chunk: 128 },
+    '12g':     { sam_chunk_size: 32, attention_query_chunk: 256 }
+  };
+  function applyPreset(name) {
+    var preset = PRESETS[name];
+    if (!preset) { return; }
+    for (var key in preset) {
+      if (!Object.prototype.hasOwnProperty.call(preset, key)) { continue; }
+      var el = CTRL[key];
+      if (!el) { continue; }
+      el.value = String(preset[key]);
+    }
+    if (name !== 'default' && CTRL.static_camera) {
+      CTRL.static_camera.value = 'on';
+    }
+    syncCameraState();
+  }
+  var presetSelect = document.getElementById('p-preset');
+  if (presetSelect) {
+    presetSelect.addEventListener('change', function () { applyPreset(presetSelect.value); });
+  }
 
   /* ================= drag & drop upload ================= */
   var dragDepth = 0;

@@ -1,0 +1,17 @@
+{
+  "sam_hand_stride": 2,
+  "sam_hand_seed": 20261014,
+  "sam_chunk_size": 10,
+  "hamer_interval": 2,
+  "hamer_batch_size": 16,
+  "hamer_smooth_window": 11,
+  "hamer_max_interp_gap": 15,
+  "seed": 0,
+  "steps": 20,
+  "cfg_scale": 1.0,
+  "attention_backend": "query_batched",
+  "attention_query_chunk": 128,
+  "static_camera": true,
+  "vggt_interval": 30,
+  "video_encoder": "libx264"
+}
