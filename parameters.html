@@ -639,7 +639,7 @@ input[type="number"].control{text-align:right}
   <section class="panel">
     <button type="button" class="panel-summary" id="panel-toggle" aria-expanded="false" aria-controls="panel-body">
       <span class="label" data-i18n="PARAMETERS">PARAMETERS</span>
-      <span class="count">16</span>
+      <span class="count">15</span>
       <span class="glyphs" aria-hidden="true"><span id="glyph-open">+</span><span id="glyph-close" hidden>&minus;</span></span>
     </button>
 
@@ -652,28 +652,26 @@ input[type="number"].control{text-align:right}
           <ul class="group-rows">
             <li class="row">
               <span class="fig">
-                <label for="p-sam-hand-interval" data-i18n="lbHandInterval">Hand interval</label>
-                <span class="descr" id="d-sam-hand-interval" data-i18n="dsHandInterval">每几帧真实计算一次双手。越小越接近逐帧，越慢。</span>
+                <label for="p-sam-hand-interval" data-i18n="lbHandInterval">Hand stride</label>
+                <span class="descr" id="d-sam-hand-interval" data-i18n="dsHandInterval">每隔几帧真实解一次手，其余帧的 2048 维手部特征线性插值补齐。1 = 每帧都解。</span>
               </span>
-              <input class="control" type="number" id="p-sam-hand-interval" data-key="sam_hand_interval"
-                     min="1" max="120" step="1" value="4" aria-describedby="d-sam-hand-interval">
+              <input class="control" type="number" id="p-sam-hand-interval" data-key="sam_hand_stride"
+                     min="1" max="8" step="1" value="2" aria-describedby="d-sam-hand-interval">
             </li>
             <li class="row">
               <span class="fig">
-                <label for="p-sam-hand-mode" data-i18n="lbSamHandMode">Hand fill</label>
-                <span class="descr" id="d-sam-hand-mode" data-i18n="dsSamHandMode">抽样帧之间的手部特征如何补齐。sample_linear 线性插值；per_frame 每帧都算。</span>
+                <label for="p-sam-chunk-size" data-i18n="lbSamChunk">SAM batch</label>
+                <span class="descr" id="d-sam-chunk-size" data-i18n="dsSamChunk">SAM 每批处理多少帧（body 批大小，手部批是其两倍）。</span>
               </span>
-              <select class="control" id="p-sam-hand-mode" data-key="sam_hand_mode" aria-describedby="d-sam-hand-mode">
-                <option value="sample_linear" selected>sample_linear</option>
-                <option value="per_frame">per_frame</option>
-              </select>
+              <input class="control" type="number" id="p-sam-chunk-size" data-key="sam_chunk_size"
+                     min="1" max="32" step="1" value="16" aria-describedby="d-sam-chunk-size">
             </li>
             <li class="row">
               <span class="fig">
                 <label for="p-sam-sampling-seed" data-i18n="lbSamplingSeed">Sampling seed</label>
                 <span class="descr" id="d-sam-sampling-seed" data-i18n="dsSamplingSeed">抽样位置的随机种子。固定后同一视频抽样帧可复现。</span>
               </span>
-              <input class="control" type="number" id="p-sam-sampling-seed" data-key="sam_sampling_seed"
+              <input class="control" type="number" id="p-sam-sampling-seed" data-key="sam_hand_seed"
                      step="1" value="20261014" aria-describedby="d-sam-sampling-seed">
             </li>
           </ul>
@@ -727,7 +725,7 @@ input[type="number"].control{text-align:right}
                 <label for="p-flow-steps" data-i18n="lbFlowSteps">Denoising steps</label>
                 <span class="descr" id="d-flow-steps" data-i18n="dsFlowSteps">FlowHMR 流匹配步数。越大越慢，20 步通常已够。</span>
               </span>
-              <input class="control" type="number" id="p-flow-steps" data-key="flow_steps"
+              <input class="control" type="number" id="p-flow-steps" data-key="steps"
                      min="1" max="100" step="1" value="20" aria-describedby="d-flow-steps">
             </li>
             <li class="row">
@@ -735,7 +733,7 @@ input[type="number"].control{text-align:right}
                 <label for="p-flow-cfg-scale" data-i18n="lbCfgScale">Guidance scale</label>
                 <span class="descr" id="d-flow-cfg-scale" data-i18n="dsCfgScale">条件引导强度。当前 12GB 预设只验证过 1.0。</span>
               </span>
-              <input class="control" type="number" id="p-flow-cfg-scale" data-key="flow_cfg_scale"
+              <input class="control" type="number" id="p-flow-cfg-scale" data-key="cfg_scale"
                      min="0.5" max="3" step="0.1" value="1.0" aria-describedby="d-flow-cfg-scale">
             </li>
             <li class="row">
@@ -743,7 +741,7 @@ input[type="number"].control{text-align:right}
                 <label for="p-flow-seed" data-i18n="lbFlowSeed">Motion seed</label>
                 <span class="descr" id="d-flow-seed" data-i18n="dsFlowSeed">生成噪声种子。同种子、同长度可复现同一段动作。</span>
               </span>
-              <input class="control" type="number" id="p-flow-seed" data-key="flow_seed"
+              <input class="control" type="number" id="p-flow-seed" data-key="seed"
                      step="1" value="0" aria-describedby="d-flow-seed">
             </li>
           </ul>
@@ -780,32 +778,27 @@ input[type="number"].control{text-align:right}
           <ul class="group-rows">
             <li class="row">
               <span class="fig">
+                <label for="p-static-camera" data-i18n="lbStaticCamera">Static camera</label>
+                <span class="descr" id="d-static-camera" data-i18n="dsStaticCamera">固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。</span>
+              </span>
+              <input class="control" type="checkbox" id="p-static-camera" data-key="static_camera" checked
+                     style="width:22px;height:22px;justify-self:start;accent-color:#111" aria-describedby="d-static-camera">
+            </li>
+            <li class="row">
+              <span class="fig">
                 <label for="p-vggt-interval" data-i18n="lbVggtInterval">Camera interval</label>
-                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔。auto 按目标采样数自动计算。</span>
+                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔，仅在关闭 static camera 时生效。auto 等同 10。</span>
               </span>
               <select class="control" id="p-vggt-interval" data-key="vggt_interval"
                       aria-describedby="d-vggt-interval">
                 <option value="auto" selected>auto</option>
                 <option value="1">1</option>
                 <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
                 <option value="5">5</option>
-                <option value="6">6</option>
-                <option value="8">8</option>
                 <option value="10">10</option>
-                <option value="15">15</option>
                 <option value="20">20</option>
                 <option value="30">30</option>
               </select>
-            </li>
-            <li class="row">
-              <span class="fig">
-                <label for="p-vggt-max-samples" data-i18n="lbVggtMaxSamples">Camera samples</label>
-                <span class="descr" id="d-vggt-max-samples" data-i18n="dsVggtMaxSamples">用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。</span>
-              </span>
-              <input class="control" type="number" id="p-vggt-max-samples" data-key="vggt_max_samples"
-                     min="1" max="200" step="1" value="31" aria-describedby="d-vggt-max-samples">
             </li>
           </ul>
         </section>
@@ -816,19 +809,13 @@ input[type="number"].control{text-align:right}
           <ul class="group-rows">
             <li class="row">
               <span class="fig">
-                <label for="p-max-generation-frames" data-i18n="lbMaxFrames">Max frames</label>
-                <span class="descr" id="d-max-generation-frames" data-i18n="dsMaxFrames">单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。</span>
+                <label for="p-video-encoder" data-i18n="lbVideoEncoder">Video encoder</label>
+                <span class="descr" id="d-video-encoder" data-i18n="dsVideoEncoder">30fps 转码用的编码器。libx264 稳定；h264_nvenc 走显卡，更快。</span>
               </span>
-              <input class="control" type="number" id="p-max-generation-frames" data-key="max_generation_frames"
-                     min="8" max="3600" step="1" value="3600" aria-describedby="d-max-generation-frames">
-            </li>
-            <li class="row">
-              <span class="fig">
-                <label for="p-threads" data-i18n="lbThreads">Threads</label>
-                <span class="descr" id="d-threads" data-i18n="dsThreads">CPU 线程数。</span>
-              </span>
-              <input class="control" type="number" id="p-threads" data-key="threads"
-                     min="1" max="64" step="1" value="8" aria-describedby="d-threads">
+              <select class="control" id="p-video-encoder" data-key="video_encoder" aria-describedby="d-video-encoder">
+                <option value="libx264" selected>libx264</option>
+                <option value="h264_nvenc">h264_nvenc (GPU)</option>
+              </select>
             </li>
           </ul>
         </section>
@@ -921,6 +908,9 @@ input[type="number"].control{text-align:right}
     lbHandInterval: 'Hand interval',
     lbSamHandMode: 'Hand fill',
     lbSamplingSeed: 'Sampling seed',
+    lbSamChunk: 'SAM batch',
+    lbStaticCamera: 'Static camera',
+    lbVideoEncoder: 'Video encoder',
     lbHamerInterval: 'HaMeR interval',
     lbSmoothWindow: 'Smooth window',
     lbMaxInterpGap: 'Max interp gap',
@@ -934,19 +924,22 @@ input[type="number"].control{text-align:right}
     lbVggtMaxSamples: 'Camera samples',
     lbMaxFrames: 'Max frames',
     lbThreads: 'Threads',
-    dsHandInterval: 'How many frames between real hand computations. Lower is closer to per-frame and slower.',
+    dsHandInterval: 'Decode hands on one frame every N and linearly interpolate the 2048-d hand slots in between. 1 = every frame.',
     dsSamHandMode: 'How sampled hand features are filled between observations. sample_linear interpolates; per_frame computes every frame.',
     dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
+    dsSamChunk: 'Frames per SAM body batch; the hand batch is twice this size.',
+    dsStaticCamera: 'Fixed camera: skip VGGT and use a default camera. Turn off for handheld or moving-camera footage.',
+    dsVideoEncoder: 'Encoder used for the 30fps transcode. libx264 is the safe default; h264_nvenc runs on the GPU and is faster.',
     dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
     dsSmoothWindow: 'HaMeR hand smoothing window. Must be odd.',
     dsMaxInterpGap: 'Longer missing spans than this are not bridged, so hands before and after an occlusion are not forced together.',
-    dsBatchSize: 'HaMeR batch size. Lower it when VRAM is short.',
+    dsBatchSize: 'HaMeR batch size.',
     dsFlowSteps: 'FlowHMR flow-matching steps. More is slower; 20 is usually enough.',
-    dsCfgScale: 'Conditioning strength. Only 1.0 has been validated on the 12GB preset.',
+    dsCfgScale: 'Conditioning strength. 1.0 is the default.',
     dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
-    dsAttentionBackend: 'Attention execution. query_batched batches queries to save VRAM; original is the stock implementation.',
+    dsAttentionBackend: 'Attention execution. query_batched is the official batched-query path; original is the stock implementation.',
     dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
-    dsVggtInterval: 'VGGT camera sampling interval. auto derives it from the sample count.',
+    dsVggtInterval: 'VGGT camera sampling interval, used only when static camera is off. auto means 10.',
     dsVggtMaxSamples: 'Images used to estimate the camera (auto interval only). Use a larger count for clips with camera motion.',
     dsMaxFrames: 'Single-pass limit. At 30fps, 3600 frames is about two minutes. Longer input errors out instead of being truncated.',
     dsThreads: 'CPU thread count.'
@@ -997,6 +990,9 @@ input[type="number"].control{text-align:right}
     lbHandInterval: '手部间隔',
     lbSamHandMode: '手部补齐方式',
     lbSamplingSeed: '抽样种子',
+    lbSamChunk: 'SAM 批大小',
+    lbStaticCamera: '静态相机',
+    lbVideoEncoder: '转码编码器',
     lbHamerInterval: 'HaMeR间隔',
     lbSmoothWindow: '平滑窗口',
     lbMaxInterpGap: '最大插值间隔',
@@ -1010,19 +1006,22 @@ input[type="number"].control{text-align:right}
     lbVggtMaxSamples: '相机采样数',
     lbMaxFrames: '最大帧数',
     lbThreads: '线程数',
-    dsHandInterval: '每几帧真实计算一次双手。越小越接近逐帧，越慢。',
+    dsHandInterval: '每隔几帧真实解一次手，其余帧的 2048 维手部特征线性插值补齐。1 = 每帧都解。',
     dsSamHandMode: '抽样帧之间的手部特征如何补齐。sample_linear 线性插值；per_frame 每帧都算。',
     dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
+    dsSamChunk: 'SAM 每批处理多少帧（body 批大小，手部批是其两倍）。',
+    dsStaticCamera: '固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。',
+    dsVideoEncoder: '30fps 转码用的编码器。libx264 稳定；h264_nvenc 走显卡，更快。',
     dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
     dsSmoothWindow: 'HaMeR 手部平滑窗口，必须是奇数。',
     dsMaxInterpGap: '超过这个帧数的缺失区间不强行桥接，避免把遮挡前后的手硬连起来。',
-    dsBatchSize: 'HaMeR 批大小。显存不足时调小。',
+    dsBatchSize: 'HaMeR 批大小。',
     dsFlowSteps: 'FlowHMR 流匹配步数。越大越慢，20 步通常已够。',
-    dsCfgScale: '条件引导强度。当前 12GB 预设只验证过 1.0。',
+    dsCfgScale: '条件引导强度。默认 1.0。',
     dsFlowSeed: '生成噪声种子。同种子、同长度可复现同一段动作。',
-    dsAttentionBackend: '注意力执行方式。query_batched 分批省显存；original 为原实现。',
+    dsAttentionBackend: '注意力执行方式。query_batched 是官方分批实现；original 为原实现。',
     dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
-    dsVggtInterval: 'VGGT 相机抽样间隔。auto 按目标采样数自动计算。',
+    dsVggtInterval: 'VGGT 相机抽样间隔，仅在关闭静态相机时生效。auto 等同 10。',
     dsVggtMaxSamples: '用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。',
     dsMaxFrames: '单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。',
     dsThreads: 'CPU 线程数。'
@@ -1589,19 +1588,19 @@ input[type="number"].control{text-align:right}
     var m = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : NaN;
     return (isFinite(m) && m >= 1) ? m : 'auto';
   }
-  /* the sample count only drives the interval when the interval is auto */
-  function syncCameraSampleState() {
+  /* the interval only matters when VGGT actually runs */
+  function syncCameraState() {
     var iv = CTRL.vggt_interval;
-    var ms = CTRL.vggt_max_samples;
-    if (!iv || !ms) { return; }
-    var automatic = String(iv.value) === 'auto';
-    ms.disabled = !automatic;
-    ms.setAttribute('aria-disabled', automatic ? 'false' : 'true');
-    var row = ms.parentNode;
+    var cb = CTRL.static_camera;
+    if (!iv) { return; }
+    var isStatic = !!(cb && cb.checked);
+    iv.disabled = isStatic;
+    iv.setAttribute('aria-disabled', isStatic ? 'true' : 'false');
+    var row = iv.parentNode;
     while (row && row !== document.body && !(row.classList && row.classList.contains('row'))) {
       row = row.parentNode;
     }
-    if (row && row.classList) { row.classList.toggle('is-locked', !automatic); }
+    if (row && row.classList) { row.classList.toggle('is-locked', isStatic); }
   }
   function textOf(el, fallback) {
     var v = el ? String(el.value) : '';
@@ -1610,22 +1609,21 @@ input[type="number"].control{text-align:right}
 
   function settings() {
     return {
-      sam_hand_interval: numOf(CTRL.sam_hand_interval, 4),
-      sam_sampling_seed: numOf(CTRL.sam_sampling_seed, 20261014),
-      sam_hand_mode: textOf(CTRL.sam_hand_mode, 'sample_linear'),
+      sam_hand_stride: numOf(CTRL.sam_hand_stride, 2),
+      sam_hand_seed: numOf(CTRL.sam_hand_seed, 20261014),
+      sam_chunk_size: numOf(CTRL.sam_chunk_size, 16),
       hamer_interval: numOf(CTRL.hamer_interval, 2),
       hamer_batch_size: numOf(CTRL.hamer_batch_size, 16),
       hamer_smooth_window: numOf(CTRL.hamer_smooth_window, 11),
       hamer_max_interp_gap: numOf(CTRL.hamer_max_interp_gap, 15),
-      flow_seed: numOf(CTRL.flow_seed, 0),
-      flow_steps: numOf(CTRL.flow_steps, 20),
-      flow_cfg_scale: numOf(CTRL.flow_cfg_scale, 1.0),
+      seed: numOf(CTRL.seed, 0),
+      steps: numOf(CTRL.steps, 20),
+      cfg_scale: numOf(CTRL.cfg_scale, 1.0),
       attention_backend: textOf(CTRL.attention_backend, 'query_batched'),
       attention_query_chunk: numOf(CTRL.attention_query_chunk, 256),
+      static_camera: !!(CTRL.static_camera && CTRL.static_camera.checked),
       vggt_interval: cameraIntervalValue(),
-      vggt_max_samples: numOf(CTRL.vggt_max_samples, 31),
-      max_generation_frames: numOf(CTRL.max_generation_frames, 3600),
-      threads: numOf(CTRL.threads, 8)
+      video_encoder: textOf(CTRL.video_encoder, 'libx264')
     };
   }
   function jsonText() {
@@ -1646,17 +1644,21 @@ input[type="number"].control{text-align:right}
   function applySettings(s) {
     if (!s) { return; }
     var d = {
-      sam_hand_interval: 4, sam_sampling_seed: 20261014, sam_hand_mode: 'sample_linear',
+      sam_hand_stride: 2, sam_hand_seed: 20261014, sam_chunk_size: 16,
       hamer_interval: 2, hamer_batch_size: 16, hamer_smooth_window: 11,
-      hamer_max_interp_gap: 15, flow_seed: 0, flow_steps: 20, flow_cfg_scale: 1.0,
+      hamer_max_interp_gap: 15, seed: 0, steps: 20, cfg_scale: 1.0,
       attention_backend: 'query_batched', attention_query_chunk: 256,
-      vggt_interval: 'auto', vggt_max_samples: 31, max_generation_frames: 3600, threads: 8
+      static_camera: true, vggt_interval: 'auto', video_encoder: 'libx264'
     };
     for (var key in d) {
       if (!Object.prototype.hasOwnProperty.call(d, key)) { continue; }
       var el = CTRL[key];
       if (!el) { continue; }
       var raw = s[key];
+      if (el.type === 'checkbox') {
+        el.checked = (raw === undefined || raw === null) ? !!d[key] : !!raw;
+        continue;
+      }
       var v;
       if (typeof raw === 'number' && isFinite(raw)) { v = String(raw); }
       else if (typeof raw === 'string' && raw !== '') { v = raw; }
@@ -1667,7 +1669,7 @@ input[type="number"].control{text-align:right}
         el.value = v;
       }
     }
-    syncCameraSampleState();
+    syncCameraState();
   }
 
   /* ================= actions ================= */
@@ -1777,15 +1779,18 @@ input[type="number"].control{text-align:right}
     window.setTimeout(function () { URL.revokeObjectURL(url); }, 0);
   });
 
-  /* camera interval: a fixed interval makes the sample count irrelevant */
+  /* the camera interval is only used when VGGT runs */
   var camInterval = CTRL.vggt_interval;
   if (camInterval) {
     camInterval.addEventListener('change', function () {
       camInterval.value = String(cameraIntervalValue());
-      syncCameraSampleState();
+      syncCameraState();
     });
   }
-  syncCameraSampleState();
+  if (CTRL.static_camera) {
+    CTRL.static_camera.addEventListener('change', syncCameraState);
+  }
+  syncCameraState();
 
   /* ================= drag & drop upload ================= */
   var dragDepth = 0;
