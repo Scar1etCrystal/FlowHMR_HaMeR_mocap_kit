@@ -46,3 +46,7 @@ __pycache__/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# local wheel cache used only by the offline installer
+/tools/transfer_deps/
+
