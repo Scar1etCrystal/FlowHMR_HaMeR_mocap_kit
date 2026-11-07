@@ -143,8 +143,6 @@ def check_cuda() -> int:
     d = torch.cuda.get_device_properties(0)
     print(f"  ok    {d.name}  {d.total_memory / 1024**3:.1f} GB  "
           f"(sm_{d.major}{d.minor}, torch {torch.__version__})")
-    if d.total_memory / 1024**3 < 10:
-        print("  警告  显存 < 10 GB，长视频可能 OOM")
     return 0
 
 

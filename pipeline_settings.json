@@ -1,7 +1,6 @@
 {
-  "sam_hand_interval": 4,
+  "sam_hand_interval": 2,
   "sam_sampling_seed": 20261014,
-  "sam_hand_mode": "sample_linear",
   "hamer_interval": 2,
   "hamer_batch_size": 16,
   "hamer_smooth_window": 11,
@@ -12,7 +11,5 @@
   "attention_backend": "query_batched",
   "attention_query_chunk": 256,
   "vggt_interval": "auto",
-  "vggt_max_samples": 31,
-  "max_generation_frames": 3600,
-  "threads": 8
+  "static_camera": true
 }
