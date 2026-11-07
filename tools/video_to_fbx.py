@@ -368,6 +368,16 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
         engine = None
         release_engine()
 
+    peak_inference = 0.0
+    try:
+        import torch
+        peak_inference = torch.cuda.max_memory_allocated() / 2 ** 30
+    except Exception:
+        pass
+    save_json(job / 'gpu_peak.json', {'inference_GiB': round(peak_inference, 2),
+                                      'peak_alloc_GiB': round(peak_inference, 2),
+                                      'updated': time.time()})
+
     stem = video.stem
     body_npz = sub / f'{stem}_seed{int(cfg["seed"])}.npz'
     working = sub / f'{stem}_30fps.mp4'
@@ -392,11 +402,24 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
     shutil.copyfile(body_npz, job / 'body_postprocess.npz')
 
     run_hamer(job, cfg)
+    peak_hamer = 0.0
+    try:
+        info = json.loads((job / 'hands' / 'run_info.json').read_text(encoding='utf-8'))
+        peak_hamer = float(info.get('peak_alloc_GiB') or 0.0)
+    except Exception:
+        pass
+    peak_total = max(peak_inference, peak_hamer)
+    save_json(job / 'gpu_peak.json', {'inference_GiB': round(peak_inference, 2),
+                                      'hamer_GiB': round(peak_hamer, 2),
+                                      'peak_alloc_GiB': round(peak_total, 2),
+                                      'updated': time.time()})
     run_merge(job)
 
     elapsed = time.perf_counter() - started
     save_json(job / 'run_manifest.json', {
         'status': 'completed', 'elapsed_seconds': elapsed, 'frames': frames,
+        'peak_alloc_GiB': round(max(peak_inference, peak_hamer), 2),
+        'peak_inference_GiB': round(peak_inference, 2), 'peak_hamer_GiB': round(peak_hamer, 2),
         'final_fbx': str(job / 'final.fbx'), 'final_npz': str(job / 'final.npz'),
         'settings': cfg, 'source': str(video),
     })

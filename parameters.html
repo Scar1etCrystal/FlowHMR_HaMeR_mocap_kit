@@ -789,7 +789,7 @@ input[type="number"].control{text-align:right}
             <li class="row">
               <span class="fig">
                 <label for="p-vggt-interval" data-i18n="lbVggtInterval">Camera interval</label>
-                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔，仅在关闭静态相机时生效。间隔越大越省时间，但显著影响显存占用。</span>
+                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔，仅在关闭静态相机时生效。显著影响显存占用，为镜头运动激烈的视频选择较小的间隔。</span>
               </span>
               <select class="control" id="p-vggt-interval" data-key="vggt_interval"
                       aria-describedby="d-vggt-interval">
@@ -805,10 +805,10 @@ input[type="number"].control{text-align:right}
             <li class="row">
               <span class="fig">
                 <label for="p-vggt-custom" data-i18n="lbVggtCustom">Custom interval</label>
-                <span class="descr" id="d-vggt-custom" data-i18n="dsVggtCustom">选 custom 时用这里的帧间隔（1–60）。</span>
+                <span class="descr" id="d-vggt-custom" data-i18n="dsVggtCustom">选“自定义”时用这里的帧间隔。</span>
               </span>
               <input class="control" type="number" id="p-vggt-custom" data-key="vggt_custom"
-                     min="1" max="60" step="1" value="10" disabled aria-describedby="d-vggt-custom">
+                     min="1" step="1" value="10" disabled aria-describedby="d-vggt-custom">
             </li>
           </ul>
         </section>
@@ -943,7 +943,7 @@ input[type="number"].control{text-align:right}
     dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
     dsSamChunk: 'Frames per SAM body batch; the hand batch is twice this size.',
     dsStaticCamera: 'Fixed camera: skip VGGT and use a default camera. Turn off for handheld or moving-camera footage.',
-    dsVggtCustom: 'Frame interval used when the list says custom (1-60).',
+    dsVggtCustom: 'Frame interval used when the list says custom.',
     dsVideoEncoder: 'Encoder used for the 30fps transcode. libx264 is the safe default; h264_nvenc runs on the GPU and is faster.',
     dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
     dsSmoothWindow: 'HaMeR hand smoothing window. Must be odd.',
@@ -954,7 +954,7 @@ input[type="number"].control{text-align:right}
     dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
     dsAttentionBackend: 'Attention execution. query_batched is the official batched-query path; original is the stock implementation.',
     dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
-    dsVggtInterval: 'VGGT camera sampling interval, used only when static camera is off. Larger is faster but significantly changes VRAM usage.',
+    dsVggtInterval: 'VGGT camera sampling interval, used only when static camera is off. Significantly affects VRAM usage; pick a smaller interval for clips with fast camera motion.',
     dsVggtMaxSamples: 'Images used to estimate the camera (auto interval only). Use a larger count for clips with camera motion.',
     dsMaxFrames: 'Single-pass limit. At 30fps, 3600 frames is about two minutes. Longer input errors out instead of being truncated.',
     dsThreads: 'CPU thread count.'
@@ -1030,7 +1030,7 @@ input[type="number"].control{text-align:right}
     dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
     dsSamChunk: 'SAM 每批处理多少帧（body 批大小，手部批是其两倍）。',
     dsStaticCamera: '固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。',
-    dsVggtCustom: '选 custom 时用这里的帧间隔（1–60）。',
+    dsVggtCustom: '选“自定义”时用这里的帧间隔。',
     dsVideoEncoder: '30fps 转码用的编码器。libx264 稳定；h264_nvenc 走显卡，更快。',
     dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
     dsSmoothWindow: 'HaMeR 手部平滑窗口，必须是奇数。',
@@ -1041,7 +1041,7 @@ input[type="number"].control{text-align:right}
     dsFlowSeed: '生成噪声种子。同种子、同长度可复现同一段动作。',
     dsAttentionBackend: '注意力执行方式。query_batched 是官方分批实现；original 为原实现。',
     dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
-    dsVggtInterval: 'VGGT 相机抽样间隔，仅在关闭静态相机时生效。间隔越大越省时间，但显著影响显存占用。',
+    dsVggtInterval: 'VGGT 相机抽样间隔，仅在关闭静态相机时生效。显著影响显存占用，为镜头运动激烈的视频选择较小的间隔。',
     dsVggtMaxSamples: '用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。',
     dsMaxFrames: '单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。',
     dsThreads: 'CPU 线程数。'
@@ -1606,7 +1606,7 @@ input[type="number"].control{text-align:right}
     var raw = String(el.value).trim().toLowerCase();
     if (raw === 'custom') {
       var n = parseInt(String(CTRL.vggt_custom ? CTRL.vggt_custom.value : ''), 10);
-      return (isFinite(n) && n >= 1) ? Math.min(n, 60) : 10;
+      return (isFinite(n) && n >= 1) ? Math.round(n) : 10;
     }
     var m = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : NaN;
     return (isFinite(m) && m >= 1) ? m : 10;
@@ -1709,9 +1709,17 @@ input[type="number"].control{text-align:right}
         el.value = v;
       }
     }
-    if (CTRL.vggt_custom && s.vggt_interval !== undefined) {
+    if (CTRL.vggt_interval && s.vggt_interval !== undefined) {
       var ivn = parseInt(String(s.vggt_interval), 10);
-      if (isFinite(ivn)) { CTRL.vggt_custom.value = String(ivn); }
+      if (isFinite(ivn) && ivn >= 1) {
+        var listed = false;
+        var opts = CTRL.vggt_interval.options;
+        for (var oi = 0; oi < opts.length; oi++) {
+          if (opts[oi].value === String(ivn)) { listed = true; break; }
+        }
+        CTRL.vggt_interval.value = listed ? String(ivn) : 'custom';
+        if (CTRL.vggt_custom) { CTRL.vggt_custom.value = String(ivn); }
+      }
     }
     syncCameraState();
   }
@@ -1826,10 +1834,7 @@ input[type="number"].control{text-align:right}
   /* the camera interval is only used when VGGT runs */
   var camInterval = CTRL.vggt_interval;
   if (camInterval) {
-    camInterval.addEventListener('change', function () {
-      camInterval.value = String(cameraIntervalValue());
-      syncCameraState();
-    });
+    camInterval.addEventListener('change', syncCameraState);
   }
   if (CTRL.static_camera) {
     CTRL.static_camera.addEventListener('change', syncCameraState);

@@ -280,22 +280,30 @@ def gpu_sample():
 
 
 def torch_peak_from_job(job: Path):
-    """Highest allocated peak the pipeline itself reported, in GiB."""
+    """Highest allocated peak the pipeline itself reported, in GiB.
+
+    The current runner publishes gpu_peak.json while it works and repeats the
+    value in run_manifest.json; the staged runner's per-stage info files are
+    still read so old jobs keep showing a peak.
+    """
     best = None
-    for name, keys in [('generation_info.json', ('peak_alloc_GiB',)),
-                       ('sam_run_info.json', ('peak_alloc_GiB',)),
-                       ('camera_info.json', ('peak_alloc_GiB',))]:
+    sources = [('gpu_peak.json', ('peak_alloc_GiB', 'inference_GiB', 'hamer_GiB')),
+               ('run_manifest.json', ('peak_alloc_GiB',)),
+               ('generation_info.json', ('peak_alloc_GiB',)),
+               ('sam_run_info.json', ('peak_alloc_GiB',)),
+               ('camera_info.json', ('peak_alloc_GiB',))]
+    for name, keys in sources:
         p = job / name
         if not p.is_file():
             continue
         try:
             data = json.loads(p.read_text(encoding='utf-8'))
-            for k in keys:
-                v = data.get(k)
-                if isinstance(v, (int, float)):
-                    best = v if best is None else max(best, float(v))
         except Exception:
-            pass
+            continue
+        for k in keys:
+            v = data.get(k)
+            if isinstance(v, (int, float)):
+                best = v if best is None else max(best, float(v))
     return round(best, 2) if best is not None else None
 
 
