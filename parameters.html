@@ -781,24 +781,34 @@ input[type="number"].control{text-align:right}
                 <label for="p-static-camera" data-i18n="lbStaticCamera">Static camera</label>
                 <span class="descr" id="d-static-camera" data-i18n="dsStaticCamera">固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。</span>
               </span>
-              <input class="control" type="checkbox" id="p-static-camera" data-key="static_camera" checked
-                     style="width:22px;height:22px;justify-self:start;accent-color:#111" aria-describedby="d-static-camera">
+              <select class="control" id="p-static-camera" data-key="static_camera" aria-describedby="d-static-camera">
+                <option value="on" selected data-i18n="optOn">on</option>
+                <option value="off" data-i18n="optOff">off</option>
+              </select>
             </li>
             <li class="row">
               <span class="fig">
                 <label for="p-vggt-interval" data-i18n="lbVggtInterval">Camera interval</label>
-                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔，仅在关闭 static camera 时生效。auto 等同 10。</span>
+                <span class="descr" id="d-vggt-interval" data-i18n="dsVggtInterval">VGGT 相机抽样间隔，仅在关闭静态相机时生效。间隔越大越省时间，但显著影响显存占用。</span>
               </span>
               <select class="control" id="p-vggt-interval" data-key="vggt_interval"
                       aria-describedby="d-vggt-interval">
-                <option value="auto" selected>auto</option>
                 <option value="1">1</option>
                 <option value="2">2</option>
                 <option value="5">5</option>
-                <option value="10">10</option>
+                <option value="10" selected>10</option>
                 <option value="20">20</option>
                 <option value="30">30</option>
+                <option value="custom" data-i18n="optCustom">custom</option>
               </select>
+            </li>
+            <li class="row">
+              <span class="fig">
+                <label for="p-vggt-custom" data-i18n="lbVggtCustom">Custom interval</label>
+                <span class="descr" id="d-vggt-custom" data-i18n="dsVggtCustom">选 custom 时用这里的帧间隔（1–60）。</span>
+              </span>
+              <input class="control" type="number" id="p-vggt-custom" data-key="vggt_custom"
+                     min="1" max="60" step="1" value="10" disabled aria-describedby="d-vggt-custom">
             </li>
           </ul>
         </section>
@@ -910,7 +920,11 @@ input[type="number"].control{text-align:right}
     lbSamplingSeed: 'Sampling seed',
     lbSamChunk: 'SAM batch',
     lbStaticCamera: 'Static camera',
+    lbVggtCustom: 'Custom interval',
     lbVideoEncoder: 'Video encoder',
+    optOn: 'on',
+    optOff: 'off',
+    optCustom: 'custom',
     lbHamerInterval: 'HaMeR interval',
     lbSmoothWindow: 'Smooth window',
     lbMaxInterpGap: 'Max interp gap',
@@ -929,6 +943,7 @@ input[type="number"].control{text-align:right}
     dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
     dsSamChunk: 'Frames per SAM body batch; the hand batch is twice this size.',
     dsStaticCamera: 'Fixed camera: skip VGGT and use a default camera. Turn off for handheld or moving-camera footage.',
+    dsVggtCustom: 'Frame interval used when the list says custom (1-60).',
     dsVideoEncoder: 'Encoder used for the 30fps transcode. libx264 is the safe default; h264_nvenc runs on the GPU and is faster.',
     dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
     dsSmoothWindow: 'HaMeR hand smoothing window. Must be odd.',
@@ -939,7 +954,7 @@ input[type="number"].control{text-align:right}
     dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
     dsAttentionBackend: 'Attention execution. query_batched is the official batched-query path; original is the stock implementation.',
     dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
-    dsVggtInterval: 'VGGT camera sampling interval, used only when static camera is off. auto means 10.',
+    dsVggtInterval: 'VGGT camera sampling interval, used only when static camera is off. Larger is faster but significantly changes VRAM usage.',
     dsVggtMaxSamples: 'Images used to estimate the camera (auto interval only). Use a larger count for clips with camera motion.',
     dsMaxFrames: 'Single-pass limit. At 30fps, 3600 frames is about two minutes. Longer input errors out instead of being truncated.',
     dsThreads: 'CPU thread count.'
@@ -992,7 +1007,11 @@ input[type="number"].control{text-align:right}
     lbSamplingSeed: '抽样种子',
     lbSamChunk: 'SAM 批大小',
     lbStaticCamera: '静态相机',
+    lbVggtCustom: '自定义间隔',
     lbVideoEncoder: '转码编码器',
+    optOn: '开',
+    optOff: '关',
+    optCustom: '自定义',
     lbHamerInterval: 'HaMeR间隔',
     lbSmoothWindow: '平滑窗口',
     lbMaxInterpGap: '最大插值间隔',
@@ -1011,6 +1030,7 @@ input[type="number"].control{text-align:right}
     dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
     dsSamChunk: 'SAM 每批处理多少帧（body 批大小，手部批是其两倍）。',
     dsStaticCamera: '固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。',
+    dsVggtCustom: '选 custom 时用这里的帧间隔（1–60）。',
     dsVideoEncoder: '30fps 转码用的编码器。libx264 稳定；h264_nvenc 走显卡，更快。',
     dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
     dsSmoothWindow: 'HaMeR 手部平滑窗口，必须是奇数。',
@@ -1021,7 +1041,7 @@ input[type="number"].control{text-align:right}
     dsFlowSeed: '生成噪声种子。同种子、同长度可复现同一段动作。',
     dsAttentionBackend: '注意力执行方式。query_batched 是官方分批实现；original 为原实现。',
     dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
-    dsVggtInterval: 'VGGT 相机抽样间隔，仅在关闭静态相机时生效。auto 等同 10。',
+    dsVggtInterval: 'VGGT 相机抽样间隔，仅在关闭静态相机时生效。间隔越大越省时间，但显著影响显存占用。',
     dsVggtMaxSamples: '用于估相机的图片数量（仅在 auto 间隔下生效）。为镜头运动的视频指定较大采样数。',
     dsMaxFrames: '单段处理上限。30fps 下 3600 帧约两分钟，超过会报错而不截断视频。',
     dsThreads: 'CPU 线程数。'
@@ -1582,25 +1602,45 @@ input[type="number"].control{text-align:right}
   }
   function cameraIntervalValue() {
     var el = CTRL.vggt_interval;
-    if (!el) { return 'auto'; }
+    if (!el) { return 10; }
     var raw = String(el.value).trim().toLowerCase();
-    if (raw === 'auto') { return 'auto'; }
+    if (raw === 'custom') {
+      var n = parseInt(String(CTRL.vggt_custom ? CTRL.vggt_custom.value : ''), 10);
+      return (isFinite(n) && n >= 1) ? Math.min(n, 60) : 10;
+    }
     var m = /^[0-9]+$/.test(raw) ? parseInt(raw, 10) : NaN;
-    return (isFinite(m) && m >= 1) ? m : 'auto';
+    return (isFinite(m) && m >= 1) ? m : 10;
+  }
+  function customIntervalActive() {
+    return !!(CTRL.vggt_interval && String(CTRL.vggt_interval.value) === 'custom');
+  }
+  function isStaticCamera() {
+    var el = CTRL.static_camera;
+    return !el || String(el.value) !== 'off';
   }
   /* the interval only matters when VGGT actually runs */
-  function syncCameraState() {
-    var iv = CTRL.vggt_interval;
-    var cb = CTRL.static_camera;
-    if (!iv) { return; }
-    var isStatic = !!(cb && cb.checked);
-    iv.disabled = isStatic;
-    iv.setAttribute('aria-disabled', isStatic ? 'true' : 'false');
-    var row = iv.parentNode;
+  function lockRow(el, locked) {
+    if (!el) { return; }
+    var row = el.parentNode;
     while (row && row !== document.body && !(row.classList && row.classList.contains('row'))) {
       row = row.parentNode;
     }
-    if (row && row.classList) { row.classList.toggle('is-locked', isStatic); }
+    if (row && row.classList) { row.classList.toggle('is-locked', locked); }
+  }
+  function syncCameraState() {
+    var iv = CTRL.vggt_interval;
+    if (!iv) { return; }
+    var isStatic = isStaticCamera();
+    iv.disabled = isStatic;
+    iv.setAttribute('aria-disabled', isStatic ? 'true' : 'false');
+    lockRow(iv, isStatic);
+    var custom = CTRL.vggt_custom;
+    if (custom) {
+      var off = isStatic || !customIntervalActive();
+      custom.disabled = off;
+      custom.setAttribute('aria-disabled', off ? 'true' : 'false');
+      lockRow(custom, off);
+    }
   }
   function textOf(el, fallback) {
     var v = el ? String(el.value) : '';
@@ -1621,7 +1661,7 @@ input[type="number"].control{text-align:right}
       cfg_scale: numOf(CTRL.cfg_scale, 1.0),
       attention_backend: textOf(CTRL.attention_backend, 'query_batched'),
       attention_query_chunk: numOf(CTRL.attention_query_chunk, 256),
-      static_camera: !!(CTRL.static_camera && CTRL.static_camera.checked),
+      static_camera: isStaticCamera(),
       vggt_interval: cameraIntervalValue(),
       video_encoder: textOf(CTRL.video_encoder, 'libx264')
     };
@@ -1648,15 +1688,15 @@ input[type="number"].control{text-align:right}
       hamer_interval: 2, hamer_batch_size: 16, hamer_smooth_window: 11,
       hamer_max_interp_gap: 15, seed: 0, steps: 20, cfg_scale: 1.0,
       attention_backend: 'query_batched', attention_query_chunk: 256,
-      static_camera: true, vggt_interval: 'auto', video_encoder: 'libx264'
+      static_camera: true, vggt_interval: 10, video_encoder: 'libx264'
     };
     for (var key in d) {
       if (!Object.prototype.hasOwnProperty.call(d, key)) { continue; }
       var el = CTRL[key];
       if (!el) { continue; }
       var raw = s[key];
-      if (el.type === 'checkbox') {
-        el.checked = (raw === undefined || raw === null) ? !!d[key] : !!raw;
+      if (key === 'static_camera') {
+        setSelectValue(el, (raw === false || raw === 'off') ? 'off' : 'on', 'on');
         continue;
       }
       var v;
@@ -1668,6 +1708,10 @@ input[type="number"].control{text-align:right}
       } else {
         el.value = v;
       }
+    }
+    if (CTRL.vggt_custom && s.vggt_interval !== undefined) {
+      var ivn = parseInt(String(s.vggt_interval), 10);
+      if (isFinite(ivn)) { CTRL.vggt_custom.value = String(ivn); }
     }
     syncCameraState();
   }
@@ -1789,6 +1833,9 @@ input[type="number"].control{text-align:right}
   }
   if (CTRL.static_camera) {
     CTRL.static_camera.addEventListener('change', syncCameraState);
+  }
+  if (CTRL.vggt_custom) {
+    CTRL.vggt_custom.addEventListener('change', syncCameraState);
   }
   syncCameraState();
 

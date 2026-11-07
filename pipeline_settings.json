@@ -12,6 +12,6 @@
   "attention_backend": "query_batched",
   "attention_query_chunk": 256,
   "static_camera": true,
-  "vggt_interval": "auto",
+  "vggt_interval": 10,
   "video_encoder": "libx264"
 }
