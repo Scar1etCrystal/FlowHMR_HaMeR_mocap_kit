@@ -1,0 +1,232 @@
+"""Export a merged SMPL-H job to the toyxyz_RGBMocap Humanoid52 rig.
+
+This is the aligned export path: SMPL-H parameters -> Humanoid52 rig (T-pose
+rest, per-bone constant basis, Mixamo bone names, 13 terminal markers) ->
+binary FBX 7400 with linear keys, plus the rig/BVH assets the original
+application consumes.
+
+The algorithm modules live in app/flowhmr/third_party/Humanoid52 and are a
+verbatim vendor of toyxyz_RGBMocap (see logs/UPSTREAM.md).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+PACK = Path(__file__).resolve().parents[1]
+APP = PACK / 'app' / 'flowhmr'
+sys.path.insert(0, str(APP))
+sys.path.insert(0, str(APP / 'third_party'))
+sys.path.insert(0, str(PACK))
+
+import torch  # noqa: E402
+
+from flowhmr.core.bodymodels.smpl_skeleton import SMPLMesh, SMPLSkeleton  # noqa: E402
+from flowhmr.core.math.geometry import (  # noqa: E402
+    angle_axis_to_rotation_matrix,
+    rot6d_to_rotation_matrix,
+    rotation_matrix_to_rot6d,
+)
+
+from Humanoid52 import bvh_bind, fbx_bind, fbx_writer, source_bvh, source_surface  # noqa: E402
+from Humanoid52.flow_export import proper_rotations, target_rig  # noqa: E402
+from Humanoid52.mixamo_rig import fk, mannequin  # noqa: E402
+from Humanoid52.source_animation import fit, temporal_halo  # noqa: E402
+
+MODEL = APP / 'assets' / 'body_models' / 'smplh' / 'neutral' / 'model.npz'
+
+
+def load_params(path: Path, fps: float = 30.0):
+    """Return (rot6d (T,52,6), trans (T,3), shapes (1,16), fps).
+
+    Accepts the merged job npz (axis-angle poses) or a toyxyz/RGBMocap
+    parameter ``.pt`` (already rot6d) so a foreign project can be re-exported.
+    """
+    if path.suffix.lower() == '.pt':
+        payload = torch.load(path, map_location='cpu', weights_only=False)
+        rot6d = torch.as_tensor(payload['rot6d'], dtype=torch.float32)[0]
+        trans = torch.as_tensor(payload['trans'], dtype=torch.float32)[0]
+        shapes = torch.as_tensor(payload['shapes'], dtype=torch.float32).reshape(1, 16)
+        return rot6d.contiguous(), trans.contiguous(), shapes, fps
+    with np.load(path) as data:
+        poses = torch.from_numpy(np.asarray(data['poses'], dtype=np.float32))
+        trans = torch.from_numpy(np.asarray(data['trans'], dtype=np.float32))
+        betas = torch.from_numpy(np.asarray(data['betas'], dtype=np.float32)).reshape(1, 16)
+        if 'mocap_framerate' in data.files:
+            fps = float(data['mocap_framerate'])
+    if poses.ndim != 3 or poses.shape[1:] != (52, 3):
+        raise ValueError(f'Expected poses (T,52,3), got {tuple(poses.shape)}')
+    rot_mats = angle_axis_to_rotation_matrix(poses.reshape(-1, 3)).reshape(len(poses), 52, 3, 3)
+    return rotation_matrix_to_rot6d(rot_mats).contiguous(), trans, betas, fps
+
+
+def build_rig():
+    mesh = SMPLMesh(model_path=str(MODEL)).eval()
+    body = SMPLSkeleton(model_path=str(MODEL)).eval()
+    return mesh, body
+
+
+def neutral_anatomy(body, mesh, betas):
+    neutral = dict(rot_mats=torch.eye(3).reshape(1, 1, 3, 3).expand(1, 52, 3, 3),
+                   shapes=betas, trans=torch.zeros(1, 3))
+    with torch.no_grad():
+        rest = body(neutral)['keypoints3d'][0].numpy()
+        template = mesh(neutral)['vertices'][0].numpy()
+    return rest, template
+
+
+def compute_surface(mesh, rot6d, betas, trans, path: Path, emit):
+    frames = int(rot6d.shape[0])
+    surface = np.lib.format.open_memmap(path, mode='w+', dtype=np.float32, shape=(frames, 6890, 3))
+    started = time.perf_counter()
+    with torch.no_grad():
+        for at in range(0, frames, 8):
+            stop = min(frames, at + 8)
+            out = mesh(dict(rot6d=rot6d[at:stop], shapes=betas, trans=trans[at:stop]))['vertices']
+            surface[at:stop] = out.numpy()
+    surface.flush()
+    emit(f'  surface: {frames} frames in {time.perf_counter() - started:.1f}s -> {path.name}')
+    return surface
+
+
+def fit_rig(rig, mapping, binding, body, params, endpoints, fps, chunk, emit):
+    rot6d, betas, trans = params
+    frames = int(rot6d.shape[0])
+    parents = body.parents.tolist()
+    local_all = np.empty((frames, 52, 3, 3), np.float32)
+    world_all = np.empty((frames, 52, 3, 3), np.float32)
+    posed_all = np.empty((frames, 52, 3), np.float32)
+    roots = np.empty((frames, 3), np.float32)
+    native_points = np.empty((frames, 22, 3), np.float32)
+    native_rotations = np.empty((frames, 22, 3, 3), np.float32)
+    errors = []
+    halo = temporal_halo(fps)
+    started = time.perf_counter()
+    with torch.inference_mode():
+        for first in range(0, frames, chunk):
+            end = min(frames, first + chunk)
+            begin = max(0, first - halo)
+            stop = min(frames, end + halo)
+            selected = dict(rot6d=rot6d[begin:stop], shapes=betas, trans=trans[begin:stop])
+            joints = body(selected)['keypoints3d'].numpy()
+            local_native = proper_rotations(rot6d_to_rotation_matrix(selected['rot6d']).numpy())
+            world_native = local_native.copy()
+            for j, p in enumerate(parents):
+                if p >= 0:
+                    world_native[:, j] = world_native[:, p] @ world_native[:, j]
+            local, posed, world = fit(
+                rig, joints[:, 0], world_native[:, :22], joints[:, :22],
+                surface_endpoints=endpoints[begin:stop], fps=fps)
+            for j in range(22, 52):
+                p = rig['parents'][j]
+                world[:, j] = world_native[:, mapping[j]]
+                local[:, j] = world[:, p].swapaxes(-1, -2) @ world[:, j]
+            posed, world = fk(rig, joints[:, 0], local)
+            core = slice(first - begin, end - begin)
+            local_all[first:end] = local[core]
+            world_all[first:end] = world[core]
+            posed_all[first:end] = posed[core]
+            roots[first:end] = joints[core][:, 0]
+            native_points[first:end] = joints[core][:, :22]
+            native_rotations[first:end] = world_native[core, :22]
+            errors.append(np.linalg.norm(posed[:, :22] - joints[:, :22], axis=-1))
+            if (first // chunk) % 4 == 0:
+                emit(f'  fit: {end}/{frames} frames  {time.perf_counter() - started:.0f}s')
+    error = np.concatenate(errors)
+    stats = dict(mean_m=float(error.mean()), p95_m=float(np.quantile(error, .95)), max_m=float(error.max()))
+    return local_all, world_all, posed_all, roots, native_points, native_rotations, stats
+
+
+def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool = True,
+           fps: float = 30.0, fbx_name: str = 'motion.fbx', emit=print) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rot6d, trans, betas, fps = load_params(npz_path, fps)
+    frames = int(rot6d.shape[0])
+    emit(f'  input: {npz_path.name}  {frames} frames @ {fps:g} fps')
+
+    mesh, body = build_rig()
+    rest, template = neutral_anatomy(body, mesh, betas)
+    rig, mapping = target_rig(rest, template, mesh.lbs_weights.numpy())
+    binding = bvh_bind.bind_pose(rig)
+    fbx_binding = fbx_bind.prepare(rig, rest, template, 'smplh', fps)
+    emit(f'  rig: {len(binding["names"])} bones, rest/tip basis ready')
+
+    surface_path = out_dir / '_surface.npy'
+    surface = compute_surface(mesh, rot6d, betas, trans, surface_path, emit)
+    endpoints = source_surface.native_endpoints(surface)
+
+    local, world, posed, roots, native_points, native_rotations, fit_stats = fit_rig(
+        rig, mapping, binding, body, (rot6d, betas, trans), endpoints, fps, chunk, emit)
+    emit(f'  fit error: mean {fit_stats["mean_m"] * 1000:.1f} mm, '
+         f'p95 {fit_stats["p95_m"] * 1000:.1f} mm, max {fit_stats["max_m"] * 1000:.1f} mm')
+
+    frames44 = np.tile(np.eye(4, dtype=np.float64), (frames, 52, 1, 1))
+    frames44[:, :, :3, :3] = world @ binding['basis']
+    frames44[:, :, :3, 3] = posed
+
+    fbx_path = out_dir / fbx_name
+    if fbx_path.exists():
+        fbx_path.unlink()
+    t0 = time.perf_counter()
+    fbx_writer.write(
+        str(fbx_path), binding['names'], binding['parents'],
+        fbx_binding['fbx_rest'], fbx_binding['fbx_rest_frames'],
+        fbx_binding['fbx_display_frames'], fbx_binding['fbx_tip_local'],
+        frames44, fps)
+    emit(f'  fbx: {fbx_path.name}  {fbx_path.stat().st_size / 2 ** 20:.2f} MB  '
+         f'{time.perf_counter() - t0:.1f}s')
+
+    if write_assets:
+        np.save(out_dir / 'rig.npy', frames44.astype(np.float32))
+        dummy = mannequin(rig)
+        np.savez_compressed(
+            out_dir / 'rig-asset.npz',
+            packed=bvh_bind.asset_frames(dummy['packed'], binding), faces=dummy['faces'],
+            vertex_count=np.array(dummy['vertex_count']), rest=binding['rest'],
+            parents=binding['parents'], ends=binding['ends'], export_basis=binding['basis'],
+            anatomical_calibration=rig['alignment'], **fbx_binding)
+        source_bvh.write_bvh(str(out_dir / 'motion.bvh'), rig, roots, local, fps)
+        np.savez_compressed(out_dir / 'joints.npz', joints=native_points,
+                            rotations=native_rotations, fps=np.array(fps))
+        meta = dict(version=1, representation='humanoid52', frames=frames, fps=fps,
+                    names=list(binding['names']), parents=binding['parents'].tolist(),
+                    source=str(npz_path), files=dict(
+                        fbx=fbx_path.name, rig='rig.npy', asset='rig-asset.npz',
+                        bvh='motion.bvh', joints='joints.npz'),
+                    fit=fit_stats)
+        (out_dir / 'mixamo.json').write_text(json.dumps(meta, indent=2, ensure_ascii=False),
+                                             encoding='utf-8')
+        (out_dir / 'export.json').write_text(json.dumps(
+            dict(format='FBX', length_unit='meter', up_axis='Y', fps=fps, frames=frames,
+                 joints=list(binding['names'])), indent=2, ensure_ascii=False), encoding='utf-8')
+        emit('  assets: rig.npy / rig-asset.npz / motion.bvh / joints.npz / mixamo.json')
+
+    surface._mmap.close()
+    surface_path.unlink(missing_ok=True)
+    return dict(fbx=str(fbx_path), frames=frames, fps=fps, fit=fit_stats)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('npz', help='Merged SMPL-H npz (poses/trans/betas)')
+    ap.add_argument('--out', required=True, help='Output directory')
+    ap.add_argument('--chunk', type=int, default=64)
+    ap.add_argument('--fps', type=float, default=30.0)
+    ap.add_argument('--fbx-name', default='motion.fbx')
+    ap.add_argument('--no-assets', action='store_true', help='Only write the FBX')
+    args = ap.parse_args()
+    started = time.perf_counter()
+    info = export(Path(args.npz), Path(args.out), chunk=args.chunk,
+                  write_assets=not args.no_assets, fps=args.fps, fbx_name=args.fbx_name)
+    info['seconds'] = round(time.perf_counter() - started, 1)
+    print(json.dumps(info, indent=2, ensure_ascii=False))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

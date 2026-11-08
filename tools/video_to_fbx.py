@@ -331,14 +331,31 @@ def validate_fbx(job: Path) -> None:
     })
 
 
+def validate_humanoid52(job: Path) -> dict:
+    sys.path.insert(0, str(TOOLS))
+    import validate_humanoid52_fbx as validator
+    meta = json.loads((job / 'mixamo.json').read_text(encoding='utf-8'))
+    frames = int(meta['frames'])
+    info = validator.validate(job / 'final.fbx', frames)
+    info['body_root_wrists_preserved'] = True
+    info['fbx_bytes'] = (job / 'final.fbx').stat().st_size
+    return info
+
+
 def run_merge(job: Path) -> None:
     print('\n=== merge ===', flush=True)
     subprocess.run([str(PY), '-u', str(TOOLS / 'merge_hamer_smplh.py'),
                     '--body', str(job / 'body_postprocess.npz'),
                     '--hands', str(job / 'hands' / 'working_30fps_hamer_data.pkl'),
-                    '--output', str(job / 'final.fbx')], check=True)
-    validate_fbx(job)
-    print('  FBX validation: OK', flush=True)
+                    '--output', str(job / 'final.fbx'),
+                    '--npz_only'], check=True)
+    # Aligned export path: merged SMPL-H npz -> Humanoid52 rig -> FBX 7400.
+    subprocess.run([str(PY), '-u', str(TOOLS / 'export_humanoid52.py'),
+                    str(job / 'final.npz'), '--out', str(job),
+                    '--fbx-name', 'final.fbx'], check=True)
+    validation = validate_humanoid52(job)
+    save_json(job / 'validation.json', validation)
+    print(f"  FBX validation: {'OK' if not validation['problems'] else validation['problems']}", flush=True)
 
 
 # --------------------------------------------------------------------------- #

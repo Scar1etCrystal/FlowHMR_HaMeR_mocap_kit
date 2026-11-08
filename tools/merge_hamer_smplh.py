@@ -13,6 +13,7 @@ def main():
     ap.add_argument('--output',required=True,help='Output FBX; same-stem NPZ is also saved')
     ap.add_argument('--model',default=str(R/'assets/body_models/smplh/neutral/model.npz'))
     ap.add_argument('--no_mesh',action='store_true')
+    ap.add_argument('--npz_only',action='store_true',help='Write only the merged npz; the Humanoid52 exporter builds the FBX')
     a=ap.parse_args();out=Path(a.output);out.parent.mkdir(parents=True,exist_ok=True)
     with np.load(a.body,allow_pickle=False) as z:d={k:z[k].copy() for k in z.files}
     with open(a.hands,'rb') as f:h=pickle.load(f)
@@ -31,6 +32,10 @@ def main():
         for k in d:
             if k!='poses':assert np.array_equal(d[k],z[k]),k
     sys.path.insert(0,str(R))
+    if a.npz_only:
+        print('MERGED', {'frames': len(pose), 'valid_LR': counts, 'body_wrist_root_unchanged': True,
+                         'left_mirror': 'M@R@M exactly once', 'fbx': None, 'npz': str(npz)}, flush=True)
+        return
     from flowhmr.core.export.smplh2fbx import SMPLH2FBX
     conv=SMPLH2FBX(smplh_model_path=a.model,obj_template_path=None)
     assert conv.convert_npz_to_fbx(str(npz),str(out),export_mesh=not a.no_mesh)
