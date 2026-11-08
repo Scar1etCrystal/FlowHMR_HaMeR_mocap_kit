@@ -102,8 +102,12 @@ def finalize(paths: dict) -> dict:
     frames = paths['frames']
     fps = paths['fps']
     info = paths['info']
-    take_rel = take.relative_to(root).as_posix()
-    person_rel = person.relative_to(root).as_posix()
+    workspace = root / 'flowhmr'
+    project_rel = take.relative_to(root).as_posix()
+    person_project_rel = person.relative_to(root).as_posix()
+    # people.json / people_scene.json resolve their paths from the workspace root
+    take_rel = take.relative_to(workspace).as_posix()
+    person_rel = person.relative_to(workspace).as_posix()
     media_rel = paths['media_video'].relative_to(root).as_posix() if paths['media_video'].is_file() else None
     step = 1.0 / fps
     times = [round(index * step, 12) for index in range(frames)]
@@ -184,12 +188,12 @@ def finalize(paths: dict) -> dict:
         'media': media_rel,
         'time_offset': 0.0,
         'active_model': 'flowhmr',
-        'models': {'flowhmr': {'active': take_rel,
+        'models': {'flowhmr': {'active': project_rel,
                                'view': {'camera_background': False,
                                         'source_time': min(1.0, frames * step),
                                         'trim_time': [0.0, frames / fps]}}},
         'origins': [{'path': str(root), 'relative': '.'}],
-        'reference': take_rel,
+        'reference': project_rel,
     }
     (root / 'project.json').write_text(json.dumps(root_project, indent=2), encoding='utf-8')
     return dict(root=str(root), take=str(take), project=str(root / 'project.json'),

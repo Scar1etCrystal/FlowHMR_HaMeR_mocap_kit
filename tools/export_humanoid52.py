@@ -268,7 +268,8 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             rot6d=rot6d.unsqueeze(0).contiguous(), shapes=betas.reshape(1, 1, 16).contiguous(),
             trans=trans.unsqueeze(0).contiguous(),
             root_rot6d=rot6d[:, 0:1].contiguous(), body_rot6d=rot6d[:, 1:].contiguous(),
-            foot_contacts=(foot_contacts if foot_contacts is not None
+            foot_contacts=(torch.as_tensor(foot_contacts, dtype=torch.float32).reshape(1, len(rot6d), 4)
+                           if foot_contacts is not None
                            else torch.zeros(1, len(rot6d), 4)),
             scene_offset=torch.zeros(3), source_representation='smplh',
             flow_version=1, placement_version=2), params_path)
@@ -366,8 +367,7 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             outputs[surface_out.name] = _stat(surface_out)
             outputs[surface_asset_out.name] = _stat(surface_asset_out)
         base_pt = out_dir / 'hmr4d_results.pt'
-        if not base_pt.exists():
-            shutil.copyfile(params_path, base_pt)
+        shutil.copyfile(params_path, base_pt)
         (out_dir / 'footlock_initial_state.json').write_text(json.dumps(dict(
             version=1, revision=(correction_payload or {}).get('contact_revision'),
             source=kind), indent=2), encoding='utf-8')
