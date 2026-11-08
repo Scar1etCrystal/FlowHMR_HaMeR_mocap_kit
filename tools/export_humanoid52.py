@@ -334,8 +334,10 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             payload.pop('segments', None)
             payload.setdefault('elapsed', payload.pop('elapsed_seconds', None))
             payload.setdefault('contact_revision', None)
-            payload.setdefault('model_stat', _stat(MODEL))
-            payload['output_stat'] = _stat(params_path)
+            # model_stat would be compared against the app's own installed model.
+            payload.pop('model_stat', None)
+            payload.pop('model_key', None)
+            # stats are filled after every artifact exists (see below)
             for key in ('contact_sole_height_before_m', 'contact_sole_height_after_m'):
                 payload.setdefault(key, None)
             native_dir = PACK / 'Lib' / 'site-packages' / 'motion_correction'
@@ -346,6 +348,7 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             payload['code'] = {p.name: _sha256(p) for p in rgb_sources}
             payload['contacts_stat'] = _stat(contacts_src) if contacts_src.is_file() else None
             meta['correction'] = payload
+        # meta is written after the correction sidecar so both carry identical stats
         (out_dir / f'{kind}_mixamo.json').write_text(
             json.dumps(meta, indent=2, ensure_ascii=False), encoding='utf-8')
         (out_dir / f'{kind}_sources.json').write_text(
@@ -368,9 +371,15 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
         (out_dir / 'footlock_initial_state.json').write_text(json.dumps(dict(
             version=1, revision=(correction_payload or {}).get('contact_revision'),
             source=kind), indent=2), encoding='utf-8')
-        if correction_payload is not None:
-            (out_dir / str(kind + '_correction.json')).write_text(
-                json.dumps(correction_payload, indent=2, ensure_ascii=False), encoding='utf-8')
+        if meta['correction'] is not None:
+            payload = meta['correction']
+            payload['output_stat'] = _stat(params_path)
+            kind_contacts = out_dir / f'{kind}_contacts.npz'
+            if kind_contacts.is_file():
+                payload['contacts_stat'] = _stat(kind_contacts)
+            payload['shared_floor'] = None
+            (out_dir / f'{kind}_correction.json').write_text(
+                json.dumps(payload, indent=2, ensure_ascii=False), encoding='utf-8')
             (out_dir / 'correction_report.json').write_text(json.dumps(
                 {'version': 1, 'results': {kind: correction_payload}},
                 indent=2, ensure_ascii=False), encoding='utf-8')

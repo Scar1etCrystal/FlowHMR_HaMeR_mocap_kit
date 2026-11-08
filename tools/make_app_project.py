@@ -135,7 +135,7 @@ def finalize(paths: dict) -> dict:
 
     take_project = base_project('..\\..\\..\\..\\..\\..', KIND)
     take_project.update(
-        people_root='..\\..\\..\\..\\..', person_id=1, person_preview=False,
+        person_id=1, person_preview=False,
         person_frames=[0, frames],
         person_fingerprint=_sha256(paths['media_video']) if paths['media_video'].is_file() else None,
         person_media_version=1, correction=correction,
