@@ -334,12 +334,39 @@ def validate_fbx(job: Path) -> None:
 def validate_humanoid52(job: Path) -> dict:
     sys.path.insert(0, str(TOOLS))
     import validate_humanoid52_fbx as validator
-    meta = json.loads((job / 'mixamo.json').read_text(encoding='utf-8'))
+    candidates = sorted(job.glob('*_mixamo.json'))
+    if not candidates:
+        raise FileNotFoundError('export did not write a *_mixamo.json sidecar')
+    meta = json.loads(candidates[0].read_text(encoding='utf-8'))
     frames = int(meta['frames'])
     info = validator.validate(job / 'final.fbx', frames)
     info['body_root_wrists_preserved'] = True
     info['fbx_bytes'] = (job / 'final.fbx').stat().st_size
     return info
+
+
+def save_correction(job: Path, engine) -> None:
+    """Persist the contact-correction report and plan next to the export."""
+    import numpy as _np
+    post = getattr(engine, 'postprocess', None)
+    report = getattr(post, 'last_report', None)
+    contacts = getattr(post, 'last_contacts', None)
+    if not report:
+        return
+    payload = dict(report)
+    payload.setdefault('adapter_version', 1)
+    payload.setdefault('source', 'initial')
+    payload.setdefault('model_key', 'smplh')
+    payload['options'] = dict(getattr(post, 'options', {}))
+    payload['contact_input'] = ('FlowHMR regressed L ankle/toe, R ankle/toe values clipped to [0,1]; '
+                                'not sigmoid logits')
+    payload['segment_count'] = len(payload.get('segments') or [])
+    payload['shared_floor'] = {'floor': payload.get('floor'), 'coordinate_frame': 'shared_world'}
+    if contacts is not None:
+        _np.savez(job / 'contacts.npz', **{k: v for k, v in contacts.items() if k != 'handoff_frames'})
+        stat = (job / 'contacts.npz').stat()
+        payload['contacts_stat'] = [int(stat.st_size), int(stat.st_mtime_ns)]
+    save_json(job / 'correction.json', payload)
 
 
 def run_merge(job: Path) -> None:
@@ -381,6 +408,7 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
     engine = build_engine(cfg)
     try:
         sub, frames = run_inference(engine, video, official_root, cfg)
+        save_correction(job, engine)
     finally:
         engine = None
         release_engine()

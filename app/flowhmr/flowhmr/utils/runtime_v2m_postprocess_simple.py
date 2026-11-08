@@ -36,10 +36,48 @@ class PostprocessPipeline:
         self._mesh_cpu = copy.deepcopy(smpl_mesh).cpu().float().eval()
         self.options = correction_options()
         self.last_report = None
+        self.last_contacts = None
 
     @classmethod
     def default(cls, body_model=None, smpl_mesh=None):
         return cls(body_model, smpl_mesh)
+
+    def capture_contacts(self, plan, *, probes, segments, fps, length):
+        """Keep the contact plan so the run can persist it next to the export.
+
+        Mirrors the upstream ``*_contacts.npz`` payload: the stance segments,
+        per-frame anchors, support weights and automatic handoffs. Foot locking
+        downstream consumes these arrays rather than the JSON report.
+        """
+        from rgbmocap_correction.contact_trajectory import handoff_mask, support_weights
+        from rgbmocap_correction.correction import VERSION as CORRECTION_VERSION
+
+        active, anchors = plan[0], plan[1]
+        weights = support_weights(probes, active, fps)
+        table = np.zeros((len(segments), 6), np.float64)
+        for row, segment in enumerate(segments):
+            table[row, 0] = segment['foot']
+            table[row, 1] = segment['start']
+            table[row, 2] = segment['end']
+            anchor = segment.get('anchor') or [0.0, 0.0, 0.0]
+            table[row, 3:6] = np.asarray(anchor, np.float64)[:3]
+        automatic = np.asarray([[s['foot'], s['start'], s['end']] for s in segments], np.int64).reshape(-1, 3)
+        mask = handoff_mask(segments, length)
+        handoffs = []
+        for segment in segments:
+            if 'handoff' in segment:
+                first, end = segment['handoff']
+                handoffs.append([segment['foot'], first, end])
+        self.last_contacts = dict(
+            segments=table,
+            automatic=automatic,
+            anchor_frames=np.arange(length, dtype=np.int64),
+            anchor_trajectory=np.asarray(anchors, np.float32),
+            support_weights=np.asarray(weights, np.float32),
+            handoffs=np.asarray(handoffs, np.int64).reshape(-1, 3),
+            planner_version=int(CORRECTION_VERSION),
+            handoff_frames=int(mask.sum()),
+        )
 
     @torch.no_grad()
     def run(self, output: dict, **kwargs) -> dict:
@@ -97,8 +135,10 @@ class PostprocessPipeline:
         after = np.empty_like(probes)
         for start in range(0, length, 128):
             after[start:start + 128] = geometry.sample(fixed_roots[start:start + 128], fixed_quats[start:start + 128])[0]
-        active, anchors, *_ = prepare_contacts(probes, probabilities, fps, floor, options["preset"], ranges, options["mode"])
+        plan = prepare_contacts(probes, probabilities, fps, floor, options["preset"], ranges, options["mode"])
+        active, anchors = plan[0], plan[1]
         report.update(sole_metrics(probes, after, probabilities, active, anchors, report["segments"], fps, options["preset"], report["floor"], options["mode"]))
+        self.capture_contacts(plan, probes=probes, segments=report["segments"], fps=fps, length=length)
         if (report["full_lock_surface_error_max_m"] or 0) > .01 or report["contact_sole_penetration_over_1cm"]:
             report["warning"] = " ".join(filter(None, (report["warning"], "Some physical sole contacts remain unresolved; inspect floor height and timing.")))
 

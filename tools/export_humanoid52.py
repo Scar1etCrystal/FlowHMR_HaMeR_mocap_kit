@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -158,10 +159,22 @@ def fit_rig(rig, mapping, binding, body, params, endpoints, fps, chunk, emit):
     return local_all, world_all, posed_all, roots, native_points, native_rotations, stats
 
 
+def load_foot_contacts(path: Path, frames: int):
+    if path.suffix.lower() == '.pt':
+        payload = torch.load(path, map_location='cpu', weights_only=False)
+        contacts = payload.get('foot_contacts')
+        return None if contacts is None else torch.as_tensor(contacts, dtype=torch.float32)
+    with np.load(path) as data:
+        if 'foot_contacts' not in data.files:
+            return None
+        return torch.from_numpy(np.asarray(data['foot_contacts'], dtype=np.float32))
+
+
 def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool = True,
            fps: float = 30.0, fbx_name: str = 'motion.fbx', emit=print) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     rot6d, trans, betas, fps = load_params(npz_path, fps)
+    foot_contacts = load_foot_contacts(npz_path, int(rot6d.shape[0]))
     frames = int(rot6d.shape[0])
     emit(f'  input: {npz_path.name}  {frames} frames @ {fps:g} fps')
 
@@ -198,18 +211,8 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
          f'{time.perf_counter() - t0:.1f}s')
 
     if write_assets:
-        np.save(out_dir / 'rig.npy', frames44.astype(np.float32))
-        dummy = mannequin(rig)
-        np.savez_compressed(
-            out_dir / 'rig-asset.npz',
-            packed=bvh_bind.asset_frames(dummy['packed'], binding), faces=dummy['faces'],
-            vertex_count=np.array(dummy['vertex_count']), rest=binding['rest'],
-            parents=binding['parents'], ends=binding['ends'], export_basis=binding['basis'],
-            anatomical_calibration=rig['alignment'], **fbx_binding)
-        source_bvh.write_bvh(str(out_dir / 'motion.bvh'), rig, roots, local, fps)
-        np.savez_compressed(out_dir / 'joints.npz', joints=native_points,
-                            rotations=native_rotations, fps=np.array(fps))
         import hashlib
+        import uuid
         from Humanoid52.bvh_bind import VERSION as BIND_VERSION
         from Humanoid52.mixamo_rig import VERSION as RIG_VERSION
         from Humanoid52.source_animation import FIT_VERSION
@@ -225,21 +228,70 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
                     digest.update(chunk)
             return digest.hexdigest()
 
+        kind = 'corrected_initial' if (out_dir / 'correction.json').is_file() else 'initial'
+        token = uuid.uuid4().hex[:12]
+        stem = f'{kind}_flow-{token}'
+        rig_path = out_dir / f'{stem}-rig.npy'
+        reference_path = out_dir / f'{stem}-reference.npy'
+        rig_joints_path = out_dir / f'{stem}-rig-joints.npy'
+        asset_path = out_dir / f'{stem}-rig-asset.npz'
+        bvh_path = out_dir / f'{stem}.bvh'
+        np.save(rig_path, frames44.astype(np.float32))
+        np.save(reference_path, native_points.astype(np.float32))
+        np.save(rig_joints_path, posed[:, :22].astype(np.float32))
+        dummy = mannequin(rig)
+        np.savez_compressed(
+            asset_path,
+            packed=bvh_bind.asset_frames(dummy['packed'], binding), faces=dummy['faces'],
+            vertex_count=np.array(dummy['vertex_count']), rest=binding['rest'],
+            parents=binding['parents'], ends=binding['ends'], export_basis=binding['basis'],
+            anatomical_calibration=rig['alignment'], **fbx_binding)
+        bvh_info = source_bvh.write_bvh(str(bvh_path), rig, roots, local, fps)
+        shutil.copyfile(bvh_path, out_dir / f'{kind}_motion.bvh')
+        shutil.copyfile(bvh_path, out_dir / 'motion.bvh')
+        joints_path = out_dir / f'{kind}_joints.npz'
+        np.savez_compressed(joints_path, joints=native_points,
+                            rotations=native_rotations, fps=np.array(fps))
+        params_path = out_dir / f'{kind}.pt'
+        torch.save(dict(
+            rot6d=rot6d.unsqueeze(0).contiguous(), shapes=betas.reshape(1, 1, 16).contiguous(),
+            trans=trans.unsqueeze(0).contiguous(),
+            root_rot6d=rot6d[:, 0:1].contiguous(), body_rot6d=rot6d[:, 1:].contiguous(),
+            foot_contacts=(foot_contacts if foot_contacts is not None
+                           else torch.zeros(1, len(rot6d), 4)),
+            scene_offset=torch.zeros(3), source_representation='smplh',
+            flow_version=1, placement_version=2), params_path)
+        correction_payload = None
+        correction_path = out_dir / 'correction.json'
+        if correction_path.is_file():
+            try:
+                correction_payload = json.loads(correction_path.read_text(encoding='utf-8'))
+            except Exception as exc:
+                emit(f'  correction.json unreadable ({type(exc).__name__}); exporting null')
+        contacts_src = out_dir / 'contacts.npz'
+        if contacts_src.is_file():
+            shutil.copyfile(contacts_src, out_dir / f'{kind}_contacts.npz')
+            shutil.copyfile(contacts_src, out_dir / 'contacts.npz') if False else None
         code_dir = APP / 'third_party' / 'Humanoid52'
         code_sources = sorted(p for p in code_dir.glob('*.py') if not p.name.startswith('_'))
         code = {p.name: _sha256(p) for p in code_sources}
         code_stats = {p.name: _stat(p) for p in code_sources}
+        outputs = {}
+        for path in (rig_path, reference_path, rig_joints_path, asset_path, bvh_path,
+                     joints_path, params_path):
+            outputs[path.name] = _stat(path)
         meta = dict(
-            version=RIG_VERSION, fit_version=FIT_VERSION, kind='export',
+            version=RIG_VERSION, fit_version=FIT_VERSION, kind=kind,
             representation='smplh', model_key='smplh', model_path=str(MODEL),
             geometry='Native SMPL-H / anatomical Humanoid52',
             method='Paired joint front/side surface roll with proximal confidence fallback',
             source_model='flowhmr', frames=frames, fps=fps,
             names=list(binding['names']), parents=binding['parents'].tolist(),
-            frames_file='rig.npy', joints_file='joints.npz',
-            asset_file='rig-asset.npz', bvh_file='motion.bvh',
-            reference_joints_file=None, raw_file=None, raw_asset=None,
-            raw_vertex_count=6890, fbx_file=fbx_path.name,
+            frames_file=rig_path.name, joints_file=joints_path.name,
+            reference_joints_file=reference_path.name,
+            asset_file=asset_path.name, bvh_file=bvh_path.name,
+            raw_file=None, raw_asset=None, raw_vertex_count=6890,
+            fbx_file=fbx_path.name, params_file=params_path.name,
             source_fit=fit_stats, selected_source_fit=fit_stats,
             finger_fit_mean_m=fit_stats['finger_fit_mean_m'],
             finger_fit_max_m=fit_stats['finger_fit_max_m'],
@@ -247,26 +299,64 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             hinge_axis_max_error=fit_stats['hinge_axis_max_error'],
             hinge_reference='Surface-aligned bind and animation; multi-axis residuals retained to preserve source pose',
             terminal_anatomy='Registered SMPL-H fingertips/toes and shaped head envelope',
-            anatomical_limits_deg=None, correction=None,
+            anatomical_limits_deg=None, correction=correction_payload,
             code=code, code_stats=code_stats, model_stat=_stat(MODEL),
             temporal_fit=dict(policy(fps)),
-            export_bind=dict(version=BIND_VERSION, length_unit='meter', up_axis='Y',
-                             root_offset=binding['origin'].tolist(), root_bone='Hips',
-                             marker_bones=int(sum(1 for j in range(52)
-                                                   if j not in set(binding['parents'].tolist()))),
-                             fbx_version=7400, interpolation='LINEAR',
-                             unit_scale_factor=100.0),
-            outputs=dict(fbx=[fbx_path.name, fbx_path.stat().st_size]),
+            export_bind=dict(
+                version=BIND_VERSION, length_unit='meter', up_axis='Y',
+                root_offset=binding['rest'][0].tolist(), root_bone='Hips',
+                marker_bones=int(sum(1 for j in range(52)
+                                      if j not in set(binding['parents'].tolist()))),
+                fbx_version=7400, interpolation='LINEAR', unit_scale_factor=100.0,
+                rotation_order_default='Per joint',
+                joint_rotation_orders={name: ''.join(order)
+                                       for name, order in zip(binding['names'], bvh_info['orders'])},
+                minimum_singularity_margin=bvh_info.get('minimum_singularity_margin')),
+            outputs=outputs,
             sources={str(npz_path): _stat(npz_path), str(MODEL): _stat(MODEL),
-                     'joints.npz': _stat(out_dir / 'joints.npz')},
+                     joints_path.name: _stat(joints_path)},
             source=str(npz_path))
-        (out_dir / 'mixamo.json').write_text(json.dumps(meta, indent=2, ensure_ascii=False),
-                                             encoding='utf-8')
-        (out_dir / 'export.json').write_text(json.dumps(
-            dict(format='FBX', length_unit='meter', up_axis='Y', fps=fps, frames=frames,
-                 joints=list(binding['names'])), indent=2, ensure_ascii=False), encoding='utf-8')
-        emit('  assets: rig.npy / rig-asset.npz / motion.bvh / joints.npz / mixamo.json')
-
+        if correction_payload is not None:
+            payload = dict(correction_payload)
+            payload.pop('segments', None)
+            payload.setdefault('elapsed', payload.pop('elapsed_seconds', None))
+            payload.setdefault('contact_revision', None)
+            payload.setdefault('model_stat', _stat(MODEL))
+            payload.setdefault('output_stat', _stat(npz_path))
+            for key in ('contact_sole_height_before_m', 'contact_sole_height_after_m'):
+                payload.setdefault(key, None)
+            native_dir = PACK / 'Lib' / 'site-packages' / 'motion_correction'
+            native = sorted(native_dir.glob('*.pyd'))
+            payload['backend_sha256'] = _sha256(native[0]) if native else None
+            rgb_dir = PACK / 'Lib' / 'site-packages' / 'rgbmocap_correction'
+            rgb_sources = sorted(p for p in rgb_dir.glob('*.py'))
+            payload['code'] = {p.name: _sha256(p) for p in rgb_sources}
+            payload['contacts_stat'] = _stat(contacts_src) if contacts_src.is_file() else None
+            meta['correction'] = payload
+        (out_dir / f'{kind}_mixamo.json').write_text(
+            json.dumps(meta, indent=2, ensure_ascii=False), encoding='utf-8')
+        (out_dir / f'{kind}_sources.json').write_text(
+            json.dumps({str(npz_path): _stat(npz_path)}, indent=2), encoding='utf-8')
+        (out_dir / f'{kind}_artifacts.json').write_text(json.dumps(dict(
+            version=1, source_stat=_stat(npz_path), fps=fps, model_stat=_stat(MODEL),
+            outputs=outputs), indent=2), encoding='utf-8')
+        if correction_payload is not None:
+            (out_dir / str(kind + '_correction.json')).write_text(
+                json.dumps(correction_payload, indent=2, ensure_ascii=False), encoding='utf-8')
+            (out_dir / 'correction_report.json').write_text(json.dumps(
+                {'version': 1, 'results': {kind: correction_payload}},
+                indent=2, ensure_ascii=False), encoding='utf-8')
+        (out_dir / 'export.json').write_text(json.dumps(dict(
+            format='FBX', frames=frames, fps=fps, result_kind=kind,
+            skeleton='Humanoid52', length_unit='meter', up_axis='Y',
+            rotation_order='Per joint', joints=list(binding['names']),
+            source='FlowHMR native SMPL-H',
+            finger_motion='Native FlowHMR animated hand rotations',
+            bind_pose=dict(root_offset=binding['rest'][0].tolist()),
+            fbx=dict(file=fbx_path.name, version=7400, interpolation='LINEAR',
+                     unit_scale_factor=100.0)), indent=2, ensure_ascii=False), encoding='utf-8')
+        emit(f'  assets: {kind}*-rig.npy / -reference.npy / -rig-joints.npy / -rig-asset.npz / .bvh / '
+             f'{kind}_joints.npz / {kind}.pt / {kind}_mixamo.json')
     surface._mmap.close()
     surface_path.unlink(missing_ok=True)
     return dict(fbx=str(fbx_path), frames=frames, fps=fps, fit=fit_stats)
