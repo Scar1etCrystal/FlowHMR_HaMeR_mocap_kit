@@ -52,7 +52,7 @@ DEFAULTS = {
     'hamer_batch_size': 16,
     'hamer_smooth_window': 11,
     'hamer_max_interp_gap': 15,
-    'multi_shot': True,
+    'merge_interrupted_segments': True,
     'shot_min_frames': 24,
 }
 
@@ -83,6 +83,7 @@ LEGACY = {
     'flow_seed': 'seed',
     'flow_steps': 'steps',
     'flow_cfg_scale': 'cfg_scale',
+    'multi_shot': 'merge_interrupted_segments',
 }
 OBSOLETE = ('sam_hand_mode', 'vggt_max_samples', 'max_generation_frames', 'threads')
 
@@ -573,8 +574,10 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
     save_json(job / 'request.json', {'source': str(video), 'created': time.time()})
     print(f'Output: {job}', flush=True)
     print(f'  source: {video}', flush=True)
+    merge_state = 'on' if cfg.get('merge_interrupted_segments', True) else 'off'
     print(f'  hand stride {cfg["sam_hand_stride"]} | sam chunk {cfg["sam_chunk_size"]} | '
-          f'static camera {bool(cfg["static_camera"])} | hamer N={cfg["hamer_interval"]}', flush=True)
+          f'static camera {bool(cfg["static_camera"])} | hamer N={cfg["hamer_interval"]} | '
+          f'merge segments {merge_state}', flush=True)
 
     started = time.perf_counter()
     official_root = job / 'official'
@@ -582,7 +585,7 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
     combined = 0
     try:
         plan = shots = None
-        if cfg.get('multi_shot', True):
+        if cfg.get('merge_interrupted_segments', True):
             working_full, plan, shots = plan_shots(engine, video, job, cfg)
         if plan and len(plan['segments']) > 1:
             combined = run_shots(engine, working_full, plan, shots, job, cfg)

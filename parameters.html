@@ -665,6 +665,23 @@ input[type="number"].control{text-align:right}
           </ul>
         </section>
 
+        <!-- ---------- GROUP 0b: PROCESSING ---------- -->
+        <section class="group">
+          <h3 class="group-label" data-i18n="grpProcessing">处理</h3>
+          <ul class="group-rows">
+            <li class="row">
+              <span class="fig">
+                <label for="p-merge-segments" data-i18n="lbMergeSegments">合并中断段</label>
+                <span class="descr" id="d-merge-segments" data-i18n="dsMergeSegments">当画面中只有一位主角时，合并由于特写镜头切换等情况导致的分段视频。对有镜头切换/长时间主角被遮挡的视频，关闭该选项可能导致输出不完整。开启该选项可能导致捕捉到主角以外人物。</span>
+              </span>
+              <select class="control" id="p-merge-segments" data-key="merge_interrupted_segments" aria-describedby="d-merge-segments">
+                <option value="on" selected data-i18n="optOn">on</option>
+                <option value="off" data-i18n="optOff">off</option>
+              </select>
+            </li>
+          </ul>
+        </section>
+
         <!-- ---------- GROUP 1: HAND ---------- -->
         <section class="group">
           <h3 class="group-label" data-i18n="grpHand">HAND</h3>
@@ -750,7 +767,7 @@ input[type="number"].control{text-align:right}
             <li class="row">
               <span class="fig">
                 <label for="p-flow-cfg-scale" data-i18n="lbCfgScale">Guidance scale</label>
-                <span class="descr" id="d-flow-cfg-scale" data-i18n="dsCfgScale">条件引导强度。当前 12GB 预设只验证过 1.0。</span>
+                <span class="descr" id="d-flow-cfg-scale" data-i18n="dsCfgScale">条件引导强度。调整为 3 左右可以改善动作质量，将会增加耗时。</span>
               </span>
               <input class="control" type="number" id="p-flow-cfg-scale" data-key="cfg_scale"
                      min="0.5" max="3" step="0.1" value="1.0" aria-describedby="d-flow-cfg-scale">
@@ -798,7 +815,7 @@ input[type="number"].control{text-align:right}
             <li class="row">
               <span class="fig">
                 <label for="p-static-camera" data-i18n="lbStaticCamera">Static camera</label>
-                <span class="descr" id="d-static-camera" data-i18n="dsStaticCamera">固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。</span>
+                <span class="descr" id="d-static-camera" data-i18n="dsStaticCamera">固定机位：跳过 VGGT，直接用一个默认相机。只有平移、缩放运动也可以被视为静止相机，旋转运动才会被视为摄像机运动；有旋转运镜时请关闭。</span>
               </span>
               <select class="control" id="p-static-camera" data-key="static_camera" aria-describedby="d-static-camera">
                 <option value="on" selected data-i18n="optOn">on</option>
@@ -933,6 +950,9 @@ input[type="number"].control{text-align:right}
     grpGeneration: 'GENERATION',
     grpAttention: 'ATTENTION',
     grpPreset: 'PRESET',
+    grpProcessing: 'PROCESSING',
+    lbMergeSegments: 'Merge interrupted segments',
+    dsMergeSegments: 'With a single main actor, merge the segments split by close-up cuts and similar interruptions. Turning it off may leave output incomplete for footage with cuts or long occlusions; turning it on may capture people other than the main actor.',
     lbPreset: 'VRAM preset',
     dsPreset: 'Apply a parameter set for your card in one step; every value stays editable.',
     optDefault: 'default',
@@ -965,7 +985,7 @@ input[type="number"].control{text-align:right}
     dsSamHandMode: 'How sampled hand features are filled between observations. sample_linear interpolates; per_frame computes every frame.',
     dsSamplingSeed: 'Random seed for picking the sampled frames. Fixed, so the same video samples the same frames.',
     dsSamChunk: 'Frames per SAM body batch; the hand batch is twice this size.',
-    dsStaticCamera: 'Fixed camera: skip VGGT and use a default camera. Turn off for handheld or moving-camera footage.',
+    dsStaticCamera: 'Fixed camera: skip VGGT and use a default camera. Panning and zooming still count as a static camera; only rotation is treated as camera motion. Turn it off for shots with camera rotation.',
     dsVggtCustom: 'Frame interval used when the list says custom.',
     dsVideoEncoder: 'Encoder used for the 30fps transcode. libx264 is the safe default; h264_nvenc runs on the GPU and is faster.',
     dsHamerInterval: 'Run HaMeR every N frames; the rest are filled by pose interpolation.',
@@ -973,7 +993,7 @@ input[type="number"].control{text-align:right}
     dsMaxInterpGap: 'Longer missing spans than this are not bridged, so hands before and after an occlusion are not forced together.',
     dsBatchSize: 'HaMeR batch size.',
     dsFlowSteps: 'FlowHMR flow-matching steps. More is slower; 20 is usually enough.',
-    dsCfgScale: 'Conditioning strength. 1.0 is the default.',
+    dsCfgScale: 'Conditioning strength. Around 3 improves motion quality, at the cost of extra runtime.',
     dsFlowSeed: 'Generation noise seed. Same seed and length reproduce the same motion.',
     dsAttentionBackend: 'Attention execution. query_batched is the official batched-query path; original is the stock implementation.',
     dsQueryChunk: 'How many queries per batch. This is an execution batch inside one layer, not a video chunk length.',
@@ -1024,6 +1044,9 @@ input[type="number"].control{text-align:right}
     grpGeneration: '生成',
     grpAttention: '注意力',
     grpPreset: '预设',
+    grpProcessing: '处理',
+    lbMergeSegments: '合并中断段',
+    dsMergeSegments: '当画面中只有一位主角时，合并由于特写镜头切换等情况导致的分段视频。对有镜头切换/长时间主角被遮挡的视频，关闭该选项可能导致输出不完整。开启该选项可能导致捕捉到主角以外人物。',
     lbPreset: '显存档位',
     dsPreset: '按显卡显存一键套用一组参数，套用后仍可手动微调。',
     optDefault: '默认',
@@ -1056,7 +1079,7 @@ input[type="number"].control{text-align:right}
     dsSamHandMode: '抽样帧之间的手部特征如何补齐。sample_linear 线性插值；per_frame 每帧都算。',
     dsSamplingSeed: '抽样位置的随机种子。固定后同一视频抽样帧可复现。',
     dsSamChunk: 'SAM 每批处理多少帧（body 批大小，手部批是其两倍）。',
-    dsStaticCamera: '固定机位：跳过 VGGT，直接用一个默认相机。手持或镜头运动的素材请关闭。',
+    dsStaticCamera: '固定机位：跳过 VGGT，直接用一个默认相机。只有平移、缩放运动也可以被视为静止相机，旋转运动才会被视为摄像机运动；有旋转运镜时请关闭。',
     dsVggtCustom: '选“自定义”时用这里的帧间隔。',
     dsVideoEncoder: '30fps 转码用的编码器。libx264 稳定；h264_nvenc 走显卡，更快。',
     dsHamerInterval: '每几帧推理一次 HaMeR，其余帧用姿态插值补齐。',
@@ -1064,7 +1087,7 @@ input[type="number"].control{text-align:right}
     dsMaxInterpGap: '超过这个帧数的缺失区间不强行桥接，避免把遮挡前后的手硬连起来。',
     dsBatchSize: 'HaMeR 批大小。',
     dsFlowSteps: 'FlowHMR 流匹配步数。越大越慢，20 步通常已够。',
-    dsCfgScale: '条件引导强度。默认 1.0。',
+    dsCfgScale: '条件引导强度。调整为 3 左右可以改善动作质量，将会增加耗时。',
     dsFlowSeed: '生成噪声种子。同种子、同长度可复现同一段动作。',
     dsAttentionBackend: '注意力执行方式。query_batched 是官方分批实现；original 为原实现。',
     dsQueryChunk: '每批处理多少个 query。只影响一层内的执行批次，不是视频分块长度。',
@@ -1645,6 +1668,10 @@ input[type="number"].control{text-align:right}
     var el = CTRL.static_camera;
     return !el || String(el.value) !== 'off';
   }
+  function isMergeSegments() {
+    var el = CTRL.merge_interrupted_segments;
+    return !el || String(el.value) !== 'off';
+  }
   /* the interval only matters when VGGT actually runs */
   function lockRow(el, locked) {
     if (!el) { return; }
@@ -1689,6 +1716,7 @@ input[type="number"].control{text-align:right}
       attention_backend: textOf(CTRL.attention_backend, 'query_batched'),
       attention_query_chunk: numOf(CTRL.attention_query_chunk, 256),
       static_camera: isStaticCamera(),
+      merge_interrupted_segments: isMergeSegments(),
       vggt_interval: cameraIntervalValue(),
       video_encoder: textOf(CTRL.video_encoder, 'libx264')
     };
@@ -1715,14 +1743,15 @@ input[type="number"].control{text-align:right}
       hamer_interval: 2, hamer_batch_size: 16, hamer_smooth_window: 11,
       hamer_max_interp_gap: 15, seed: 0, steps: 20, cfg_scale: 1.0,
       attention_backend: 'query_batched', attention_query_chunk: 256,
-      static_camera: true, vggt_interval: 10, video_encoder: 'libx264'
+      static_camera: true, merge_interrupted_segments: true,
+      vggt_interval: 10, video_encoder: 'libx264'
     };
     for (var key in d) {
       if (!Object.prototype.hasOwnProperty.call(d, key)) { continue; }
       var el = CTRL[key];
       if (!el) { continue; }
       var raw = s[key];
-      if (key === 'static_camera') {
+      if (key === 'static_camera' || key === 'merge_interrupted_segments') {
         setSelectValue(el, (raw === false || raw === 'off') ? 'off' : 'on', 'on');
         continue;
       }
@@ -1872,13 +1901,14 @@ input[type="number"].control{text-align:right}
   syncCameraState();
 
   /* ================= VRAM presets ================= */
-  /* the SAM batch is the memory knob; the attention chunk is only used as a
-     secondary safety margin on the long-clip generation stage */
+  /* Mirrors pipeline_settings[_8g|_10g|_12g].json: the SAM batch is the memory
+     knob, the attention chunk is a secondary resource margin, and the camera
+     interval matches the tested tier (static camera stays on). */
   var PRESETS = {
-    'default': { sam_chunk_size: 16, attention_query_chunk: 256 },
-    '8g':      { sam_chunk_size: 10, attention_query_chunk: 128 },
-    '10g':     { sam_chunk_size: 24, attention_query_chunk: 128 },
-    '12g':     { sam_chunk_size: 32, attention_query_chunk: 256 }
+    'default': { sam_chunk_size: 16, attention_query_chunk: 256, vggt_interval: 10 },
+    '8g':      { sam_chunk_size: 10, attention_query_chunk: 128, vggt_interval: 30 },
+    '10g':     { sam_chunk_size: 24, attention_query_chunk: 128, vggt_interval: 30 },
+    '12g':     { sam_chunk_size: 32, attention_query_chunk: 256, vggt_interval: 30 }
   };
   function applyPreset(name) {
     var preset = PRESETS[name];

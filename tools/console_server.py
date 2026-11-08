@@ -10,7 +10,7 @@ Endpoints
     GET  /api/settings     current pipeline_settings.json
     GET  /api/videos       videos found in inputs\
     POST /api/upload?name= raw request body saved as a video
-    POST /api/run          {"video": "...", ...16 settings keys...}
+    POST /api/run          {"video": "...", ...17 settings keys...}
     POST /api/stop         terminate the running job
     POST /api/reveal       open the last output folder
     GET  /api/status       one-shot status snapshot
