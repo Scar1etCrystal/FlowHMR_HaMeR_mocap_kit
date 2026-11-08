@@ -36,7 +36,7 @@ from flowhmr.core.math.geometry import (  # noqa: E402
 from Humanoid52 import bvh_bind, fbx_bind, fbx_writer, source_bvh, source_surface  # noqa: E402
 from Humanoid52.flow_export import proper_rotations, target_rig  # noqa: E402
 from Humanoid52.mixamo_rig import fk, mannequin  # noqa: E402
-from Humanoid52.source_animation import fit, temporal_halo  # noqa: E402
+from Humanoid52.source_animation import fit, policy, temporal_halo, validate  # noqa: E402
 
 MODEL = APP / 'assets' / 'body_models' / 'smplh' / 'neutral' / 'model.npz'
 
@@ -105,6 +105,9 @@ def fit_rig(rig, mapping, binding, body, params, endpoints, fps, chunk, emit):
     native_points = np.empty((frames, 22, 3), np.float32)
     native_rotations = np.empty((frames, 22, 3, 3), np.float32)
     errors = []
+    finger_errors = []
+    distal_error = 0.0
+    hinge_error = 0.0
     halo = temporal_halo(fps)
     started = time.perf_counter()
     with torch.inference_mode():
@@ -128,17 +131,30 @@ def fit_rig(rig, mapping, binding, body, params, endpoints, fps, chunk, emit):
                 local[:, j] = world[:, p].swapaxes(-1, -2) @ world[:, j]
             posed, world = fk(rig, joints[:, 0], local)
             core = slice(first - begin, end - begin)
-            local_all[first:end] = local[core]
-            world_all[first:end] = world[core]
-            posed_all[first:end] = posed[core]
-            roots[first:end] = joints[core][:, 0]
-            native_points[first:end] = joints[core][:, :22]
+            local_core = local[core]
+            world_core = world[core]
+            posed_core = posed[core]
+            joints_core = joints[core]
+            local_all[first:end] = local_core
+            world_all[first:end] = world_core
+            posed_all[first:end] = posed_core
+            roots[first:end] = joints_core[:, 0]
+            native_points[first:end] = joints_core[:, :22]
             native_rotations[first:end] = world_native[core, :22]
-            errors.append(np.linalg.norm(posed[:, :22] - joints[:, :22], axis=-1))
+            errors.append(np.linalg.norm(posed_core[:, :22] - joints_core[:, :22], axis=-1))
+            finger_errors.append(np.linalg.norm(posed_core[:, 22:] - joints_core[:, mapping[22:]], axis=-1))
+            for j in (7, 8, 20, 21):
+                distal_error = max(distal_error, float(np.abs(world_core[:, j] - world_native[core, j]).max()))
+            hinge_error = max(hinge_error, float(validate(local_core)))
             if (first // chunk) % 4 == 0:
                 emit(f'  fit: {end}/{frames} frames  {time.perf_counter() - started:.0f}s')
     error = np.concatenate(errors)
-    stats = dict(mean_m=float(error.mean()), p95_m=float(np.quantile(error, .95)), max_m=float(error.max()))
+    finger_error = np.concatenate(finger_errors)
+    stats = dict(mean_m=float(error.mean()), p95_m=float(np.quantile(error, .95)), max_m=float(error.max()),
+                 finger_fit_mean_m=float(finger_error.mean()),
+                 finger_fit_max_m=float(finger_error.max()),
+                 distal_rotation_max_error=float(distal_error),
+                 hinge_axis_max_error=float(hinge_error))
     return local_all, world_all, posed_all, roots, native_points, native_rotations, stats
 
 
@@ -193,12 +209,57 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
         source_bvh.write_bvh(str(out_dir / 'motion.bvh'), rig, roots, local, fps)
         np.savez_compressed(out_dir / 'joints.npz', joints=native_points,
                             rotations=native_rotations, fps=np.array(fps))
-        meta = dict(version=1, representation='humanoid52', frames=frames, fps=fps,
-                    names=list(binding['names']), parents=binding['parents'].tolist(),
-                    source=str(npz_path), files=dict(
-                        fbx=fbx_path.name, rig='rig.npy', asset='rig-asset.npz',
-                        bvh='motion.bvh', joints='joints.npz'),
-                    fit=fit_stats)
+        import hashlib
+        from Humanoid52.bvh_bind import VERSION as BIND_VERSION
+        from Humanoid52.mixamo_rig import VERSION as RIG_VERSION
+        from Humanoid52.source_animation import FIT_VERSION
+
+        def _stat(path: Path):
+            value = Path(path).stat()
+            return [int(value.st_size), int(value.st_mtime_ns)]
+
+        def _sha256(path: Path):
+            digest = hashlib.sha256()
+            with open(path, 'rb') as handle:
+                for chunk in iter(lambda: handle.read(1 << 20), b''):
+                    digest.update(chunk)
+            return digest.hexdigest()
+
+        code_dir = APP / 'third_party' / 'Humanoid52'
+        code_sources = sorted(p for p in code_dir.glob('*.py') if not p.name.startswith('_'))
+        code = {p.name: _sha256(p) for p in code_sources}
+        code_stats = {p.name: _stat(p) for p in code_sources}
+        meta = dict(
+            version=RIG_VERSION, fit_version=FIT_VERSION, kind='export',
+            representation='smplh', model_key='smplh', model_path=str(MODEL),
+            geometry='Native SMPL-H / anatomical Humanoid52',
+            method='Paired joint front/side surface roll with proximal confidence fallback',
+            source_model='flowhmr', frames=frames, fps=fps,
+            names=list(binding['names']), parents=binding['parents'].tolist(),
+            frames_file='rig.npy', joints_file='joints.npz',
+            asset_file='rig-asset.npz', bvh_file='motion.bvh',
+            reference_joints_file=None, raw_file=None, raw_asset=None,
+            raw_vertex_count=6890, fbx_file=fbx_path.name,
+            source_fit=fit_stats, selected_source_fit=fit_stats,
+            finger_fit_mean_m=fit_stats['finger_fit_mean_m'],
+            finger_fit_max_m=fit_stats['finger_fit_max_m'],
+            distal_rotation_max_error=fit_stats['distal_rotation_max_error'],
+            hinge_axis_max_error=fit_stats['hinge_axis_max_error'],
+            hinge_reference='Surface-aligned bind and animation; multi-axis residuals retained to preserve source pose',
+            terminal_anatomy='Registered SMPL-H fingertips/toes and shaped head envelope',
+            anatomical_limits_deg=None, correction=None,
+            code=code, code_stats=code_stats, model_stat=_stat(MODEL),
+            temporal_fit=dict(policy(fps)),
+            export_bind=dict(version=BIND_VERSION, length_unit='meter', up_axis='Y',
+                             root_offset=binding['origin'].tolist(), root_bone='Hips',
+                             marker_bones=int(sum(1 for j in range(52)
+                                                   if j not in set(binding['parents'].tolist()))),
+                             fbx_version=7400, interpolation='LINEAR',
+                             unit_scale_factor=100.0),
+            outputs=dict(fbx=[fbx_path.name, fbx_path.stat().st_size]),
+            sources={str(npz_path): _stat(npz_path), str(MODEL): _stat(MODEL),
+                     'joints.npz': _stat(out_dir / 'joints.npz')},
+            source=str(npz_path))
         (out_dir / 'mixamo.json').write_text(json.dumps(meta, indent=2, ensure_ascii=False),
                                              encoding='utf-8')
         (out_dir / 'export.json').write_text(json.dumps(
