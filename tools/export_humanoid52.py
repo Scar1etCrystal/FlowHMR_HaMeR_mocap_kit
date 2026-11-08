@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import time
@@ -171,10 +172,15 @@ def load_foot_contacts(path: Path, frames: int):
 
 
 def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool = True,
-           fps: float = 30.0, fbx_name: str = 'motion.fbx', emit=print) -> dict:
+           fps: float = 30.0, fbx_name: str = 'motion.fbx', write_surface: bool = True,
+           emit=print) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     rot6d, trans, betas, fps = load_params(npz_path, fps)
     foot_contacts = load_foot_contacts(npz_path, int(rot6d.shape[0]))
+    import uuid
+    kind = 'corrected_initial' if (out_dir / 'correction.json').is_file() else 'initial'
+    token = uuid.uuid4().hex[:12]
+    stem = f'{kind}_flow-{token}'
     frames = int(rot6d.shape[0])
     emit(f'  input: {npz_path.name}  {frames} frames @ {fps:g} fps')
 
@@ -185,7 +191,7 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
     fbx_binding = fbx_bind.prepare(rig, rest, template, 'smplh', fps)
     emit(f'  rig: {len(binding["names"])} bones, rest/tip basis ready')
 
-    surface_path = out_dir / '_surface.npy'
+    surface_path = out_dir / (f'{stem}-surface.npy' if write_surface else '_surface_tmp.npy')
     surface = compute_surface(mesh, rot6d, betas, trans, surface_path, emit)
     endpoints = source_surface.native_endpoints(surface)
 
@@ -212,7 +218,6 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
 
     if write_assets:
         import hashlib
-        import uuid
         from Humanoid52.bvh_bind import VERSION as BIND_VERSION
         from Humanoid52.mixamo_rig import VERSION as RIG_VERSION
         from Humanoid52.source_animation import FIT_VERSION
@@ -228,14 +233,20 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
                     digest.update(chunk)
             return digest.hexdigest()
 
-        kind = 'corrected_initial' if (out_dir / 'correction.json').is_file() else 'initial'
-        token = uuid.uuid4().hex[:12]
-        stem = f'{kind}_flow-{token}'
         rig_path = out_dir / f'{stem}-rig.npy'
         reference_path = out_dir / f'{stem}-reference.npy'
         rig_joints_path = out_dir / f'{stem}-rig-joints.npy'
         asset_path = out_dir / f'{stem}-rig-asset.npz'
         bvh_path = out_dir / f'{stem}.bvh'
+        surface_out = out_dir / f'{stem}-surface.npy'
+        surface_asset_out = out_dir / f'{stem}-surface-asset.npz'
+        if write_surface:
+            surface.flush()
+            from Humanoid52.mesh_data import adjacency
+            faces = np.asarray(mesh.faces, np.uint32)
+            offsets, neighbors = adjacency(faces, 6890)
+            np.savez(surface_asset_out, faces=faces, offsets=offsets, neighbors=neighbors,
+                     vertex_count=np.array(6890))
         np.save(rig_path, frames44.astype(np.float32))
         np.save(reference_path, native_points.astype(np.float32))
         np.save(rig_joints_path, posed[:, :22].astype(np.float32))
@@ -290,7 +301,9 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             frames_file=rig_path.name, joints_file=joints_path.name,
             reference_joints_file=reference_path.name,
             asset_file=asset_path.name, bvh_file=bvh_path.name,
-            raw_file=None, raw_asset=None, raw_vertex_count=6890,
+            raw_file=(surface_out.name if write_surface else None),
+            raw_asset=(surface_asset_out.name if write_surface else None),
+            raw_vertex_count=6890,
             fbx_file=fbx_path.name, params_file=params_path.name,
             source_fit=fit_stats, selected_source_fit=fit_stats,
             finger_fit_mean_m=fit_stats['finger_fit_mean_m'],
@@ -340,6 +353,15 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
         (out_dir / f'{kind}_artifacts.json').write_text(json.dumps(dict(
             version=1, source_stat=_stat(npz_path), fps=fps, model_stat=_stat(MODEL),
             outputs=outputs), indent=2), encoding='utf-8')
+        if write_surface:
+            (out_dir / f'{kind}_mesh.json').write_text(json.dumps(dict(
+                version=1, representation='smplh', frames_file=surface_out.name,
+                asset=surface_asset_out.name,
+                source_size=_stat(npz_path)[0], source_mtime_ns=_stat(npz_path)[1],
+                model_size=_stat(MODEL)[0], model_mtime_ns=_stat(MODEL)[1]),
+                indent=2), encoding='utf-8')
+            outputs[surface_out.name] = _stat(surface_out)
+            outputs[surface_asset_out.name] = _stat(surface_asset_out)
         if correction_payload is not None:
             (out_dir / str(kind + '_correction.json')).write_text(
                 json.dumps(correction_payload, indent=2, ensure_ascii=False), encoding='utf-8')
@@ -358,7 +380,8 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
         emit(f'  assets: {kind}*-rig.npy / -reference.npy / -rig-joints.npy / -rig-asset.npz / .bvh / '
              f'{kind}_joints.npz / {kind}.pt / {kind}_mixamo.json')
     surface._mmap.close()
-    surface_path.unlink(missing_ok=True)
+    if not write_surface:
+        surface_path.unlink(missing_ok=True)
     return dict(fbx=str(fbx_path), frames=frames, fps=fps, fit=fit_stats)
 
 
@@ -369,11 +392,14 @@ def main() -> int:
     ap.add_argument('--chunk', type=int, default=64)
     ap.add_argument('--fps', type=float, default=30.0)
     ap.add_argument('--fbx-name', default='motion.fbx')
+    ap.add_argument('--no-surface', action='store_true',
+                    help='Skip the raw SMPL surface (the app retarget path reads it)')
     ap.add_argument('--no-assets', action='store_true', help='Only write the FBX')
     args = ap.parse_args()
     started = time.perf_counter()
     info = export(Path(args.npz), Path(args.out), chunk=args.chunk,
-                  write_assets=not args.no_assets, fps=args.fps, fbx_name=args.fbx_name)
+                  write_assets=not args.no_assets, fps=args.fps, fbx_name=args.fbx_name,
+                  write_surface=not args.no_surface)
     info['seconds'] = round(time.perf_counter() - started, 1)
     print(json.dumps(info, indent=2, ensure_ascii=False))
     return 0
