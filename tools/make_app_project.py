@@ -135,7 +135,7 @@ def finalize(paths: dict) -> dict:
 
     take_project = base_project('..\\..\\..\\..\\..\\..', KIND)
     take_project.update(
-        person_id=1, person_preview=False,
+        people_root='..\\..\\..\\..\\..', person_id=1, person_preview=False,
         person_frames=[0, frames],
         person_fingerprint=_sha256(paths['media_video']) if paths['media_video'].is_file() else None,
         person_media_version=1, correction=correction,
@@ -150,9 +150,10 @@ def finalize(paths: dict) -> dict:
     workspace = base_project('..', 'corrected_initial')
     (root / 'flowhmr' / 'project.json').write_text(json.dumps(workspace, indent=2), encoding='utf-8')
 
+    workspace_input = root / 'flowhmr' / 'input.mp4'
     people = {
         'version': 1,
-        'input': _stat(paths['media_video']) if paths['media_video'].is_file() else None,
+        'input': _stat(workspace_input) if workspace_input.is_file() else None,
         'fingerprint': source_sha,
         'people': [{
             'id': 1, 'name': 'Person 1', 'color': '#969696', 'checked': True,
@@ -163,7 +164,7 @@ def finalize(paths: dict) -> dict:
         }],
     }
     (root / 'flowhmr' / 'people.json').write_text(json.dumps(people, indent=2), encoding='utf-8')
-    media_stat = _stat(paths['media_video']) if paths['media_video'].is_file() else None
+    media_stat = _stat(workspace_input) if workspace_input.is_file() else None
     people_scene = {
         'version': 2, 'input': media_stat,
         'anchor': take_rel, 'anchor_id': 1,
@@ -173,6 +174,8 @@ def finalize(paths: dict) -> dict:
     }
     (root / 'flowhmr' / 'people_scene.json').write_text(
         json.dumps(people_scene, indent=2), encoding='utf-8')
+    (root / 'flowhmr' / 'scene_floor.json').write_text(json.dumps(dict(
+        version=1, auto_floor=True, floor=0.0), indent=2), encoding='utf-8')
 
     root_project = {
         'workspace_version': 2,
