@@ -52,6 +52,8 @@ DEFAULTS = {
     'hamer_batch_size': 16,
     'hamer_smooth_window': 11,
     'hamer_max_interp_gap': 15,
+    'multi_shot': True,
+    'shot_min_frames': 24,
 }
 
 STAGE_PRINT = {
@@ -239,6 +241,153 @@ def trim_to_track(src: Path, dst: Path, first: int, last: int, total: int) -> No
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def save_correction_payload(job: Path, report: dict, contacts: dict | None) -> None:
+    """Persist a contact-correction report (single run or stitched shots)."""
+    import numpy as _np
+
+    if not report:
+        return
+    payload = dict(report)
+    payload.setdefault('adapter_version', 1)
+    payload.setdefault('source', 'initial')
+    payload.setdefault('model_key', 'smplh')
+    payload['contact_input'] = ('FlowHMR regressed L ankle/toe, R ankle/toe values clipped to [0,1]; '
+                                'not sigmoid logits')
+    payload['segment_count'] = len(payload.get('segments') or [])
+    payload['shared_floor'] = {'floor': payload.get('floor'), 'coordinate_frame': 'shared_world'}
+    if contacts is not None:
+        _np.savez(job / 'contacts.npz', **{k: v for k, v in contacts.items() if k != 'handoff_frames'})
+        stat = (job / 'contacts.npz').stat()
+        payload['contacts_stat'] = [int(stat.st_size), int(stat.st_mtime_ns)]
+    save_json(job / 'correction.json', payload)
+
+
+def plan_shots(engine, video: Path, job: Path, cfg: dict):
+    """Run the tracker pass once and plan camera-cut segments."""
+    import numpy as np
+
+    sys.path.insert(0, str(TOOLS))
+    import multishot
+
+    pre = job / 'official' / 'pre'
+    pre.mkdir(parents=True, exist_ok=True)
+    working = engine.proc.transcode(str(video), str(pre), force_fps=30)
+    tracks_path = job / 'tracks.npz'
+    if tracks_path.is_file():
+        data = multishot.load_tracks(tracks_path)
+        print(f'  shots: cached tracks ({len(data["tracks"])} track ids)', flush=True)
+    else:
+        result = engine.proc.detect_and_track(str(working))
+        tracks = [{'id': t.track_id, 'frames': t.frames, 'bboxes': t.bboxes} for t in result.tracks]
+        multishot.save_tracks(tracks_path, tracks, total=result.total_frames,
+                              width=result.width, height=result.height)
+        data = {'tracks': tracks, 'total_frames': result.total_frames,
+                'width': result.width, 'height': result.height}
+    segments = multishot.plan_segments(
+        data['tracks'], data['total_frames'], data['width'], data['height'],
+        min_frames=int(cfg.get('shot_min_frames', 24)))
+    plan = multishot.describe_plan(data['tracks'], data['total_frames'],
+                                   data['width'], data['height'], segments)
+    plan['tracks'] = [dict(row) for row in plan['tracks']]
+    save_json(job / 'segments.json', plan)
+    print(f'  shots: {len(segments)} segment(s) covering {data["total_frames"]} frames', flush=True)
+    for segment in segments:
+        print(f"    {segment['start']}-{segment['end']}  {segment['frames']} frames  "
+              f"ids {segment['track_ids']}  bbox {segment['bbox_fraction']:.3f}", flush=True)
+    return working, plan, data['tracks']
+
+
+def run_shots(engine, working: Path, plan: dict, tracks: list[dict], job: Path, cfg: dict) -> int:
+    """Infer every shot separately, then stitch the SMPL arrays together."""
+    import numpy as np
+
+    sys.path.insert(0, str(TOOLS))
+    import multishot
+
+    segments = plan['segments']
+    total = int(plan['total_frames'])
+    width, height = int(plan['width']), int(plan['height'])
+    shot_root = job / 'segments'
+    shot_out = shot_root / 'official'
+    parts, reports, contacts, offsets, clips = [], [], [], [], []
+
+    def progress(stage, percent, desc):
+        name = getattr(stage, 'value', str(stage))
+        mapped = STAGE_PRINT.get(name)
+        if mapped and mapped != progress.stage:
+            progress.stage = mapped
+            print(f'\n=== {mapped} ===', flush=True)
+
+    progress.stage = None
+    for index, segment in enumerate(segments):
+        name = f'shot{index:02d}'
+        first, last = int(segment['start']), int(segment['end']) - 1
+        sub_dir = shot_out / name
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        clip = shot_root / f'{name}.mp4'
+        if not clip.is_file():
+            multishot.trim_video(working, clip, first, last)
+        # Pre-seed process_video's 30 fps transcode cache so it reuses the clip
+        # instead of encoding the same frames again.
+        cache = sub_dir / f'{name}_30fps.mp4'
+        if not cache.is_file():
+            shutil.copyfile(clip, cache)
+        clips.append(cache)
+        bbox_path = sub_dir / f'{name}_bbox.npz'
+        if not bbox_path.is_file():
+            boxes = multishot.segment_bbox(tracks, first, last + 1, width, height)
+            np.savez(bbox_path, bbox=boxes.astype(np.float32),
+                     start_end=np.array([0, boxes.shape[0] - 1], np.int64))
+        print(f"\n--- shot {index}: frames {first}..{last} ---", flush=True)
+        engine.process_video(
+            str(clip), str(shot_out),
+            seed=int(cfg['seed']), cfg_scale=float(cfg['cfg_scale']),
+            vggt_frame_interval=int(cfg['vggt_interval']),
+            static_camera=bool(cfg['static_camera']),
+            sam_chunk_size=int(cfg['sam_chunk_size']),
+            sam_hand_stride=int(cfg['sam_hand_stride']),
+            sam_hand_seed=int(cfg['sam_hand_seed']),
+            progress_callback=progress,
+        )
+        npz_path = sub_dir / f'{name}_seed{int(cfg["seed"])}.npz'
+        with np.load(npz_path) as data:
+            parts.append({key: data[key] for key in data.files})
+        post = getattr(engine, 'postprocess', None)
+        report = getattr(post, 'last_report', None)
+        plan_contacts = getattr(post, 'last_contacts', None)
+        reports.append(json.loads(json.dumps(report, default=float)) if report else {})
+        contacts.append(dict(plan_contacts) if plan_contacts else None)
+        offsets.append(first)
+        print(f'  shot {index}: {len(parts[-1]["poses"])} frames inferred', flush=True)
+
+    merged = multishot.merge_segment_arrays(parts)
+    np.savez(job / 'body_postprocess.npz', **merged)
+    multishot.concat_videos(clips, job / 'working_30fps.mp4')
+    boxes = np.concatenate([multishot.segment_bbox(tracks, segment['start'], segment['end'],
+                                                   width, height) for segment in segments], axis=0)
+    count = len(boxes)
+    np.savez(job / 'main_track.npz', bbox=boxes, bbox_xyxy=boxes,
+             detected=np.ones(count, bool),
+             start_end=np.array([0, count - 1], np.int64),
+             observed_range=np.array([0, count - 1], np.int64))
+    report, merged_contacts = multishot.merge_reports(reports, contacts, offsets, count)
+    save_correction_payload(job, report, merged_contacts or None)
+    print(f'  shots merged: {len(segments)} runs -> {count} frames', flush=True)
+    return count
+
+
+def write_smplh_fbx(job: Path) -> None:
+    """Keep the original SMPL-H rig next to the Humanoid52 export."""
+    import numpy as _np
+
+    from flowhmr.core.export.smplh2fbx import SMPLH2FBX
+
+    params = {key: value for key, value in _np.load(job / 'final.npz').items()}
+    print('  SMPL-H FBX (original rig, kept alongside Humanoid52)', flush=True)
+    SMPLH2FBX().convert_npz_to_fbx(params, str(job / 'smplh.fbx'), export_mesh=True)
+    shutil.copyfile(job / 'final.npz', job / 'smplh.npz')
+
+
 def run_hamer(job: Path, cfg: dict) -> None:
     print('\n=== hamer ===', flush=True)
     cmd = [str(PY), '-u', str(TOOLS / 'hamer_pose_sampled.py'),
@@ -387,12 +536,10 @@ def run_merge(job: Path) -> None:
     if working.is_file():
         video = working
     settings = load_settings(job / 'settings.json')
-    frames = int(json.loads((job / 'official').rglob('*_bbox.npz').__next__().read_bytes()[:0] or b'{}') if False else 0)
     import numpy as _np
-    bbox = next((job / 'official').rglob('*_bbox.npz'))
-    with _np.load(bbox) as data:
-        start, last = (int(v) for v in data['start_end'])
-        frames = last - start + 1
+
+    with _np.load(job / 'body_postprocess.npz') as data:
+        frames = int(data['num_frames'])
     paths = packer.prepare(job, video, frames=frames, fps=30.0)
     take = paths['take']
     for name in ('correction.json', 'contacts.npz'):
@@ -403,6 +550,7 @@ def run_merge(job: Path) -> None:
                     str(job / 'final.npz'), '--out', str(take),
                     '--fbx-name', 'final.fbx'], check=True)
     shutil.copyfile(take / 'final.fbx', job / 'final.fbx')
+    write_smplh_fbx(job)
     project = packer.finalize(packer.prepare(job, video, frames=frames, fps=30.0))
     print(f"  project: {project['project']}", flush=True)
     validation = validate_humanoid52(job)
@@ -431,9 +579,16 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
     started = time.perf_counter()
     official_root = job / 'official'
     engine = build_engine(cfg)
+    combined = 0
     try:
-        sub, frames = run_inference(engine, video, official_root, cfg)
-        save_correction(job, engine)
+        plan = shots = None
+        if cfg.get('multi_shot', True):
+            working_full, plan, shots = plan_shots(engine, video, job, cfg)
+        if plan and len(plan['segments']) > 1:
+            combined = run_shots(engine, working_full, plan, shots, job, cfg)
+        else:
+            sub, frames = run_inference(engine, video, official_root, cfg)
+            save_correction(job, engine)
     finally:
         engine = None
         release_engine()
@@ -448,28 +603,31 @@ def run_video(video_path: str, root: Path, cfg: dict, fresh: bool) -> Path:
                                       'peak_alloc_GiB': round(peak_inference, 2),
                                       'updated': time.time()})
 
-    stem = video.stem
-    body_npz = sub / f'{stem}_seed{int(cfg["seed"])}.npz'
-    working = sub / f'{stem}_30fps.mp4'
-    bbox_npz = sub / f'{stem}_bbox.npz'
-    for p in (body_npz, working, bbox_npz):
-        if not p.is_file():
-            raise FileNotFoundError(f'official output missing: {p}')
+    if combined:
+        frames = combined
+    else:
+        stem = video.stem
+        body_npz = sub / f'{stem}_seed{int(cfg["seed"])}.npz'
+        working = sub / f'{stem}_30fps.mp4'
+        bbox_npz = sub / f'{stem}_bbox.npz'
+        for p in (body_npz, working, bbox_npz):
+            if not p.is_file():
+                raise FileNotFoundError(f'official output missing: {p}')
 
-    import cv2
-    import numpy as np
+        import cv2
+        import numpy as np
 
-    with np.load(bbox_npz) as z:
-        boxes = z['bbox'].astype(np.float32)
-        start_end = z['start_end'] if 'start_end' in z.files else np.array([0, len(boxes) - 1])
-    cap = cv2.VideoCapture(str(working))
-    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-    trim_to_track(working, job / 'working_30fps.mp4', int(start_end[0]), int(start_end[1]), total)
-    n = len(boxes)
-    np.savez(job / 'main_track.npz', bbox=boxes, bbox_xyxy=boxes, detected=np.ones(n, bool),
-             start_end=start_end, observed_range=start_end)
-    shutil.copyfile(body_npz, job / 'body_postprocess.npz')
+        with np.load(bbox_npz) as z:
+            boxes = z['bbox'].astype(np.float32)
+            start_end = z['start_end'] if 'start_end' in z.files else np.array([0, len(boxes) - 1])
+        cap = cv2.VideoCapture(str(working))
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        cap.release()
+        trim_to_track(working, job / 'working_30fps.mp4', int(start_end[0]), int(start_end[1]), total)
+        n = len(boxes)
+        np.savez(job / 'main_track.npz', bbox=boxes, bbox_xyxy=boxes, detected=np.ones(n, bool),
+                 start_end=start_end, observed_range=start_end)
+        shutil.copyfile(body_npz, job / 'body_postprocess.npz')
 
     run_hamer(job, cfg)
     peak_hamer = 0.0
