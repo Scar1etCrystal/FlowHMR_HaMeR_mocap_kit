@@ -334,7 +334,7 @@ def validate_fbx(job: Path) -> None:
 def validate_humanoid52(job: Path) -> dict:
     sys.path.insert(0, str(TOOLS))
     import validate_humanoid52_fbx as validator
-    candidates = sorted(job.glob('*_mixamo.json'))
+    candidates = sorted(job.rglob('*_mixamo.json'))
     if not candidates:
         raise FileNotFoundError('export did not write a *_mixamo.json sidecar')
     meta = json.loads(candidates[0].read_text(encoding='utf-8'))
@@ -376,10 +376,32 @@ def run_merge(job: Path) -> None:
                     '--hands', str(job / 'hands' / 'working_30fps_hamer_data.pkl'),
                     '--output', str(job / 'final.fbx'),
                     '--npz_only'], check=True)
-    # Aligned export path: merged SMPL-H npz -> Humanoid52 rig -> FBX 7400.
+    # Aligned export path: merged SMPL-H npz -> Humanoid52 rig -> FBX 7400,
+    # written inside a toyxyz-compatible project tree (their app has no motion
+    # import; retarget only reads its own project layout).
+    sys.path.insert(0, str(TOOLS))
+    import make_app_project as packer
+    request = json.loads((job / 'request.json').read_text(encoding='utf-8'))
+    video = Path(request['source'])
+    settings = load_settings(job / 'settings.json')
+    frames = int(json.loads((job / 'official').rglob('*_bbox.npz').__next__().read_bytes()[:0] or b'{}') if False else 0)
+    import numpy as _np
+    bbox = next((job / 'official').rglob('*_bbox.npz'))
+    with _np.load(bbox) as data:
+        start, last = (int(v) for v in data['start_end'])
+        frames = last - start + 1
+    paths = packer.prepare(job, video, frames=frames, fps=30.0)
+    take = paths['take']
+    for name in ('correction.json', 'contacts.npz'):
+        source = job / name
+        if source.is_file():
+            shutil.copyfile(source, take / name)
     subprocess.run([str(PY), '-u', str(TOOLS / 'export_humanoid52.py'),
-                    str(job / 'final.npz'), '--out', str(job),
+                    str(job / 'final.npz'), '--out', str(take),
                     '--fbx-name', 'final.fbx'], check=True)
+    shutil.copyfile(take / 'final.fbx', job / 'final.fbx')
+    project = packer.finalize(packer.prepare(job, video, frames=frames, fps=30.0))
+    print(f"  project: {project['project']}", flush=True)
     validation = validate_humanoid52(job)
     save_json(job / 'validation.json', validation)
     print(f"  FBX validation: {'OK' if not validation['problems'] else validation['problems']}", flush=True)
