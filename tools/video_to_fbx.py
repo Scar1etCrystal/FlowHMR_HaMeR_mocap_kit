@@ -383,6 +383,9 @@ def run_merge(job: Path) -> None:
     import make_app_project as packer
     request = json.loads((job / 'request.json').read_text(encoding='utf-8'))
     video = Path(request['source'])
+    working = job / 'working_30fps.mp4'
+    if working.is_file():
+        video = working
     settings = load_settings(job / 'settings.json')
     frames = int(json.loads((job / 'official').rglob('*_bbox.npz').__next__().read_bytes()[:0] or b'{}') if False else 0)
     import numpy as _np

@@ -57,11 +57,21 @@ def _probe_video(path: Path) -> dict:
                 codec='h264', bytes=int(Path(path).stat().st_size))
 
 
+def working_video(job: Path, fallback: Path) -> Path:
+    """The project media must be the 30fps working clip the motion was built from.
+
+    The source clip can be a different frame rate (25 fps footage transcodes to
+    30 fps), and reusing it would let the video end before the animation.
+    """
+    candidate = Path(job) / 'working_30fps.mp4'
+    return candidate if candidate.is_file() else Path(fallback)
+
+
 def prepare(job: Path, video: Path, *, frames: int, fps: float = 30.0,
             name: str | None = None, reset: bool = False) -> dict:
     """Create the project skeleton and return the paths the export must fill."""
     job = Path(job)
-    video = Path(video)
+    video = working_video(job, video)
     info = _probe_video(video) if video.is_file() else dict(
         path=str(video), width=0, height=0, fps=fps, duration=frames / fps,
         frames=frames, codec='h264', bytes=0)
