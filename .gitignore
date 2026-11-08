@@ -50,3 +50,5 @@ desktop.ini
 # local wheel cache used only by the offline installer
 /tools/transfer_deps/
 
+# --- third-party build artifacts -----------------------------------------
+/app/flowhmr/third_party/RGBMocapCorrection/build/
