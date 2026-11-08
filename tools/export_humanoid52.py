@@ -335,7 +335,7 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
             payload.setdefault('elapsed', payload.pop('elapsed_seconds', None))
             payload.setdefault('contact_revision', None)
             payload.setdefault('model_stat', _stat(MODEL))
-            payload.setdefault('output_stat', _stat(npz_path))
+            payload['output_stat'] = _stat(params_path)
             for key in ('contact_sole_height_before_m', 'contact_sole_height_after_m'):
                 payload.setdefault(key, None)
             native_dir = PACK / 'Lib' / 'site-packages' / 'motion_correction'
@@ -362,6 +362,12 @@ def export(npz_path: Path, out_dir: Path, *, chunk: int = 64, write_assets: bool
                 indent=2), encoding='utf-8')
             outputs[surface_out.name] = _stat(surface_out)
             outputs[surface_asset_out.name] = _stat(surface_asset_out)
+        base_pt = out_dir / 'hmr4d_results.pt'
+        if not base_pt.exists():
+            shutil.copyfile(params_path, base_pt)
+        (out_dir / 'footlock_initial_state.json').write_text(json.dumps(dict(
+            version=1, revision=(correction_payload or {}).get('contact_revision'),
+            source=kind), indent=2), encoding='utf-8')
         if correction_payload is not None:
             (out_dir / str(kind + '_correction.json')).write_text(
                 json.dumps(correction_payload, indent=2, ensure_ascii=False), encoding='utf-8')
